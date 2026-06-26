@@ -1,0 +1,65 @@
+server:
+  address: ${SERVER_ADDRESS:0.0.0.0}
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-exception: true
+
+spring:
+  application:
+    name: backend-api-escolar
+  config:
+    import:
+      - optional:file:./application-local.yml
+      - optional:file:C:/Users/Diegazzo/Desktop/Desarrollo/Backend-CTF-SCHOOL/backend-api-escolar/application-local.yml
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sistema_escolar
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:1234}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+app:
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:4200,http://127.0.0.1:4200,http://localhost,http://127.0.0.1}
+  security:
+    jwt:
+      secret: ${APP_SECURITY_JWT_SECRET:my-super-secret-key-for-jwt-signing-with-java21-hexagonal-auth}
+      expiration-seconds: ${APP_SECURITY_JWT_EXPIRATION_SECONDS:3600}
+  ai:
+    provider: ${AI_PROVIDER:local}
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      model: ${OPENAI_MODEL:gpt-5.4-mini}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:45}
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      model: ${GEMINI_MODEL:gemini-3.5-flash}
+      base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
+      timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:45}
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      model: ${DEEPSEEK_MODEL:deepseek-v4-pro}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      timeout-seconds: ${DEEPSEEK_TIMEOUT_SECONDS:45}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: alpha
+    tagsSorter: alpha
