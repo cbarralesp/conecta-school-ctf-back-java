@@ -2,6 +2,8 @@ package com.example.authhexagonal.infrastructure.adapter.in.web.dto;
 
 import com.example.authhexagonal.domain.model.PlanningSummaryUnit;
 
+import java.time.LocalDate;
+
 public record PlanningSummaryUnitResponse(
         Long id,
         String code,
@@ -13,6 +15,8 @@ public record PlanningSummaryUnitResponse(
         int totalClasses,
         int publishedClasses,
         int totalDocuments,
+        LocalDate startDate,
+        LocalDate endDate,
         String weekRange,
         int progressPercent,
         String status
@@ -30,6 +34,8 @@ public record PlanningSummaryUnitResponse(
                 unit.totalClasses(),
                 unit.publishedClasses(),
                 unit.totalDocuments(),
+                unit.startDate(),
+                unit.endDate(),
                 unit.weekRange(),
                 unit.progressPercent(),
                 unit.status().name()

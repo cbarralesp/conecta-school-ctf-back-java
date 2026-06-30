@@ -17,7 +17,7 @@ public record PlanningUnitCreateRequest(
         @NotNull @Min(1) Integer estimatedWeeks,
         @NotNull @Min(0) Integer plannedClasses,
         String generalDescription,
-        @NotBlank String learningObjectives,
-        @NotBlank String achievementIndicators
+        String learningObjectives,
+        String achievementIndicators
 ) {
 }

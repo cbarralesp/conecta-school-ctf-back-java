@@ -58,6 +58,8 @@ public class PlanningClassService implements
         GeneratePlanningClassSuggestionUseCase {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PlanningClassService.class);
+    private static final String MANUAL_CLASS_OBJECTIVE_CODE = "CLASE_LIBRE";
+    private static final String MANUAL_CLASS_OBJECTIVE_LABEL = "Clase manual";
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "docx", "pptx");
     private static final long MAX_FILE_SIZE_BYTES = 20L * 1024L * 1024L;
@@ -197,7 +199,7 @@ public class PlanningClassService implements
 
         validateCommand(command, PlanningClassStatus.PUBLICADA);
 
-        PlanningObjectiveOption objective = resolveObjective(unit, command.objectiveCode(), username);
+        PlanningObjectiveOption objective = resolveObjective(unit, command, username);
         PlanningOptionItem duration = resolveDuration(command.durationCode());
         PlanningEvaluationType evaluationType = resolveEvaluationType(command.evaluationType());
 
@@ -422,7 +424,7 @@ public class PlanningClassService implements
 
         validateCommand(command, status);
 
-        PlanningObjectiveOption objective = resolveObjective(unit, command.objectiveCode(), username);
+        PlanningObjectiveOption objective = resolveObjective(unit, command, username);
         PlanningOptionItem duration = resolveDuration(command.durationCode());
         PlanningEvaluationType evaluationType = resolveEvaluationType(command.evaluationType());
 
@@ -471,7 +473,7 @@ public class PlanningClassService implements
         }
 
         if (status == PlanningClassStatus.PUBLICADA) {
-            if (command.objectiveCode() == null || command.objectiveCode().isBlank()) {
+            if (isObjectiveSelectionMissing(command)) {
                 throw new IllegalArgumentException("El OA es obligatorio");
             }
             if (command.evaluationType() == null || command.evaluationType().isBlank()) {
@@ -530,12 +532,13 @@ public class PlanningClassService implements
 
     private PlanningObjectiveOption resolveObjective(
             PlanningClassCatalogUnit unit,
-            String objectiveCode,
+            PlanningClassCommand command,
             String username
     ) {
+        String objectiveCode = command.objectiveCode();
         String description = normalizeNullable(unit.learningObjectives());
-        if (objectiveCode == null || objectiveCode.isBlank()) {
-            return fallbackObjective(unit);
+        if (objectiveCode == null || objectiveCode.isBlank() || MANUAL_CLASS_OBJECTIVE_CODE.equalsIgnoreCase(objectiveCode.trim())) {
+            return manualObjective(unit, command);
         }
 
         return planningClassCatalogRepositoryPort.findObjectives(username).stream()
@@ -552,6 +555,29 @@ public class PlanningClassService implements
                         List.of(),
                         List.of()
                 ));
+    }
+
+    private PlanningObjectiveOption manualObjective(
+            PlanningClassCatalogUnit unit,
+            PlanningClassCommand command
+    ) {
+        String description = normalizeNullable(command.objectiveDescription());
+        if (description == null) {
+            description = normalizeNullable(command.title());
+        }
+        if (description == null) {
+            description = normalizeNullable(unit.learningObjectives());
+        }
+        if (description == null) {
+            description = "Clase manual registrada sin OA curricular asociado.";
+        }
+
+        return new PlanningObjectiveOption(
+                MANUAL_CLASS_OBJECTIVE_CODE,
+                MANUAL_CLASS_OBJECTIVE_LABEL + " - " + unit.unitNumberLabel(),
+                description,
+                unit.unitId()
+        );
     }
 
     private PlanningObjectiveOption fallbackObjective(PlanningClassCatalogUnit unit) {
@@ -605,6 +631,15 @@ public class PlanningClassService implements
 
     private String normalizeNullable(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private boolean isObjectiveSelectionMissing(PlanningClassCommand command) {
+        if (command.objectiveCode() != null && !command.objectiveCode().isBlank()) {
+            return false;
+        }
+
+        return sanitizeObjectiveIds(command.objectiveIds()).isEmpty()
+                && sanitizeObjectiveSelections(command.objectiveSelections()).isEmpty();
     }
 
     private List<UUID> sanitizeObjectiveIds(List<UUID> objectiveIds) {

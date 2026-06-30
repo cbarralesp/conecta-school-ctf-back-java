@@ -19,6 +19,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.text.Normalizer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -33,13 +34,13 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
     }
 
     @Override
-    public EnrollmentSummary summarizeEnrollments(String search, Long courseId, String status) {
+    public EnrollmentSummary summarizeEnrollments(Integer schoolYear, String search, Long courseId, String status) {
         String normalizedSearch = search == null ? "" : search.trim();
         String normalizedStatus = normalizeStatusFilter(status);
+        Integer normalizedSchoolYear = normalizeSchoolYear(schoolYear);
         boolean inactiveFilter = "INACTIVA".equals(normalizedStatus);
-        long normalizedCourseId = courseId == null ? -1L : courseId;
-
-        return jdbcTemplate.queryForObject("""
+        List<Object> params = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("""
                 SELECT
                     COUNT(1) AS total,
                     COUNT(*) FILTER (WHERE UPPER(m."ESTADO") = 'ACTIVO') AS active_count,
@@ -49,35 +50,27 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                 JOIN "ALUMNOS" a ON a."ID" = m."ALUMNO_ID"
                 JOIN "CURSOS" c ON c."ID" = m."CURSO_ID"
                 LEFT JOIN "MATRICULA_APODERADOS" ap ON ap."MATRICULA_ID" = m."ID" AND ap."ACTIVO" = TRUE
-                WHERE (
-                        (? = TRUE AND COALESCE(m."ACTIVA", FALSE) = FALSE)
-                     OR (? = FALSE AND m."ACTIVA" = TRUE)
-                )
-                  AND (? = '' OR UPPER(a."NOMBRE" || ' ' || a."APELLIDOS" || ' ' || a."RUN" || ' ' || COALESCE(ap."NOMBRE", '') || ' ' || COALESCE(ap."APELLIDOS", ''))
-                        LIKE '%' || UPPER(?) || '%')
-                  AND (? = -1 OR c."ID" = ?)
-                  AND (
-                        ? = ''
-                     OR (? = 'INACTIVA' AND UPPER(COALESCE(m."ESTADO", '')) IN ('INACTIVA', 'INACTIVO'))
-                     OR UPPER(COALESCE(m."ESTADO", '')) = UPPER(?)
-                  )
-                """,
+                WHERE
+                """);
+
+        appendEnrollmentFilters(sql, params, inactiveFilter, normalizedSearch, normalizedSchoolYear, courseId, normalizedStatus);
+
+        return jdbcTemplate.queryForObject(sql.toString(),
                 (rs, rowNum) -> new EnrollmentSummary(
                         rs.getInt("total"),
                         rs.getInt("active_count"),
                         rs.getInt("pending_count"),
                         rs.getInt("course_count")
                 ),
-                inactiveFilter, inactiveFilter,
-                normalizedSearch, normalizedSearch,
-                normalizedCourseId, normalizedCourseId,
-                normalizedStatus, normalizedStatus, normalizedStatus
+                params.toArray()
         );
     }
 
     @Override
-    public List<EnrollmentCourseOption> findActiveCourses() {
-        return jdbcTemplate.query("""
+    public List<EnrollmentCourseOption> findActiveCourses(Integer schoolYear) {
+        Integer normalizedSchoolYear = normalizeSchoolYear(schoolYear);
+        List<Object> params = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("""
                 SELECT
                     c."ID",
                     c."CODIGO",
@@ -101,8 +94,20 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                 LEFT JOIN "CURSO_JORNADAS" cj
                   ON cj."ID" = c."JORNADA_ID"
                 WHERE c."ACTIVO" = TRUE
+                """);
+
+        if (normalizedSchoolYear != null) {
+            sql.append("""
+                  AND c."ANIO_ESCOLAR" = ?
+                    """);
+            params.add(normalizedSchoolYear);
+        }
+
+        sql.append("""
                 ORDER BY c."ANIO_ESCOLAR" DESC, COALESCE(cg."ORDEN", 999), c."LETRA", c."CODIGO"
-                """, (rs, rowNum) -> new EnrollmentCourseOption(
+                """);
+
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new EnrollmentCourseOption(
                 rs.getLong("ID"),
                 rs.getString("CODIGO"),
                 rs.getString("NOMBRE"),
@@ -110,21 +115,22 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                 rs.getString("LETRA"),
                 rs.getInt("ANIO_ESCOLAR"),
                 rs.getString("JORNADA")
-        ));
+        ), params.toArray());
     }
 
     @Override
-    public List<EnrollmentListItem> findEnrollments(String search, Long courseId, String status, Integer page, Integer size) {
+    public List<EnrollmentListItem> findEnrollments(Integer schoolYear, String search, Long courseId, String status, Integer page, Integer size) {
         String normalizedSearch = search == null ? "" : search.trim();
         String normalizedStatus = normalizeStatusFilter(status);
+        Integer normalizedSchoolYear = normalizeSchoolYear(schoolYear);
         boolean inactiveFilter = "INACTIVA".equals(normalizedStatus);
-        long normalizedCourseId = courseId == null ? -1L : courseId;
         boolean paginated = page != null && size != null;
         int normalizedPage = page == null ? 0 : Math.max(page, 0);
         int normalizedSize = size == null ? Integer.MAX_VALUE : Math.max(size, 1);
         int offset = normalizedPage * normalizedSize;
+        List<Object> params = new ArrayList<>();
 
-        String sql = """
+        StringBuilder sql = new StringBuilder("""
                 SELECT
                     m."ID",
                     a."ID" AS student_id,
@@ -132,6 +138,7 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                     a."NOMBRE",
                     a."APELLIDOS",
                     c."ID" AS course_id,
+                    c."ANIO_ESCOLAR" AS course_school_year,
                     TRIM(
                         COALESCE(NULLIF(BTRIM(c."NOMBRE"), ''), cg."NOMBRE")
                         || CASE
@@ -150,44 +157,25 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                 JOIN "CURSOS" c ON c."ID" = m."CURSO_ID"
                 LEFT JOIN "CURSO_GRADOS" cg ON cg."ID" = c."GRADO_ID"
                 LEFT JOIN "MATRICULA_APODERADOS" ap ON ap."MATRICULA_ID" = m."ID" AND ap."ACTIVO" = TRUE
-                WHERE (
-                        (? = TRUE AND COALESCE(m."ACTIVA", FALSE) = FALSE)
-                     OR (? = FALSE AND m."ACTIVA" = TRUE)
-                )
-                  AND (? = '' OR UPPER(a."NOMBRE" || ' ' || a."APELLIDOS" || ' ' || a."RUN" || ' ' || COALESCE(ap."NOMBRE", '') || ' ' || COALESCE(ap."APELLIDOS", ''))
-                        LIKE '%' || UPPER(?) || '%')
-                  AND (? = -1 OR c."ID" = ?)
-                  AND (
-                        ? = ''
-                     OR (? = 'INACTIVA' AND UPPER(COALESCE(m."ESTADO", '')) IN ('INACTIVA', 'INACTIVO'))
-                     OR UPPER(COALESCE(m."ESTADO", '')) = UPPER(?)
-                  )
+                WHERE
+                """);
+
+        appendEnrollmentFilters(sql, params, inactiveFilter, normalizedSearch, normalizedSchoolYear, courseId, normalizedStatus);
+
+        sql.append("""
                 ORDER BY a."NOMBRE", a."APELLIDOS"
-                """;
+                """);
 
         if (paginated) {
-            sql += """
+            sql.append("""
                     LIMIT ?
                     OFFSET ?
-                    """;
+                    """);
+            params.add(normalizedSize);
+            params.add(offset);
         }
 
-        Object[] params = paginated
-                ? new Object[] {
-                inactiveFilter, inactiveFilter,
-                normalizedSearch, normalizedSearch,
-                normalizedCourseId, normalizedCourseId,
-                normalizedStatus, normalizedStatus, normalizedStatus,
-                normalizedSize, offset
-        }
-                : new Object[] {
-                inactiveFilter, inactiveFilter,
-                normalizedSearch, normalizedSearch,
-                normalizedCourseId, normalizedCourseId,
-                normalizedStatus, normalizedStatus, normalizedStatus
-        };
-
-        return jdbcTemplate.query(sql, (rs, rowNum) -> new EnrollmentListItem(
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new EnrollmentListItem(
                 rs.getLong("ID"),
                 rs.getLong("student_id"),
                 rs.getString("RUN"),
@@ -196,10 +184,11 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                 (rs.getString("NOMBRE") + " " + rs.getString("APELLIDOS")).trim(),
                 rs.getLong("course_id"),
                 rs.getString("course_name"),
+                rs.getInt("course_school_year"),
                 rs.getString("guardian_name"),
                 rs.getString("ESTADO"),
                 rs.getObject("FECHA_MATRICULA", LocalDate.class).toString()
-        ), params);
+        ), params.toArray());
     }
 
     @Override
@@ -399,6 +388,30 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
             );
         }
         return count != null && count > 0;
+    }
+
+    @Override
+    public boolean hasActiveEnrollmentForStudentInSchoolYear(Long studentId, int schoolYear) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1)
+                FROM "MATRICULAS" m
+                JOIN "CURSOS" c ON c."ID" = m."CURSO_ID"
+                WHERE m."ALUMNO_ID" = ?
+                  AND m."ACTIVA" = TRUE
+                  AND c."ANIO_ESCOLAR" = ?
+                """, Integer.class, studentId, schoolYear);
+        return count != null && count > 0;
+    }
+
+    @Override
+    public Optional<Integer> findCourseSchoolYear(Long courseId) {
+        return jdbcTemplate.query("""
+                SELECT "ANIO_ESCOLAR"
+                FROM "CURSOS"
+                WHERE "ID" = ?
+                  AND "ACTIVO" = TRUE
+                LIMIT 1
+                """, (rs, rowNum) -> rs.getInt("ANIO_ESCOLAR"), courseId).stream().findFirst();
     }
 
     @Override
@@ -829,6 +842,10 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                 DELETE FROM "MATRICULA_RETIRO_RESPONSABLES"
                 WHERE "MATRICULA_ID" = ?
                 """, enrollmentId);
+        if (contacts == null) {
+            return;
+        }
+
         for (EnrollmentPickupContact contact : contacts) {
             jdbcTemplate.update("""
                     INSERT INTO "MATRICULA_RETIRO_RESPONSABLES" (
@@ -853,6 +870,9 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                 DELETE FROM "MATRICULA_DOCUMENTOS"
                 WHERE "MATRICULA_ID" = ?
                 """, enrollmentId);
+        if (documents == null) {
+            return;
+        }
 
         for (EnrollmentDocument document : documents) {
             jdbcTemplate.update("""
@@ -1502,6 +1522,68 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
             return "INACTIVA";
         }
         return normalized;
+    }
+
+    private void appendEnrollmentFilters(
+            StringBuilder sql,
+            List<Object> params,
+            boolean inactiveFilter,
+            String normalizedSearch,
+            Integer normalizedSchoolYear,
+            Long courseId,
+            String normalizedStatus
+    ) {
+        if (inactiveFilter) {
+            sql.append("""
+                    COALESCE(m."ACTIVA", FALSE) = FALSE
+                    """);
+        } else {
+            sql.append("""
+                    m."ACTIVA" = TRUE
+                    """);
+        }
+
+        if (normalizedSearch != null && !normalizedSearch.isBlank()) {
+            sql.append("""
+                      AND UPPER(a."NOMBRE" || ' ' || a."APELLIDOS" || ' ' || a."RUN" || ' ' || COALESCE(ap."NOMBRE", '') || ' ' || COALESCE(ap."APELLIDOS", ''))
+                            LIKE '%' || UPPER(?) || '%'
+                    """);
+            params.add(normalizedSearch);
+        }
+
+        if (normalizedSchoolYear != null) {
+            sql.append("""
+                      AND c."ANIO_ESCOLAR" = ?
+                    """);
+            params.add(normalizedSchoolYear);
+        }
+
+        if (courseId != null && courseId > 0) {
+            sql.append("""
+                      AND c."ID" = ?
+                    """);
+            params.add(courseId);
+        }
+
+        if (normalizedStatus != null && !normalizedStatus.isBlank()) {
+            if ("INACTIVA".equals(normalizedStatus)) {
+                sql.append("""
+                          AND UPPER(COALESCE(m."ESTADO", '')) IN ('INACTIVA', 'INACTIVO')
+                        """);
+            } else {
+                sql.append("""
+                          AND UPPER(COALESCE(m."ESTADO", '')) = ?
+                        """);
+                params.add(normalizedStatus);
+            }
+        }
+    }
+
+    private Integer normalizeSchoolYear(Integer schoolYear) {
+        if (schoolYear == null || schoolYear < 2000 || schoolYear > 2100) {
+            return null;
+        }
+        return schoolYear;
     }
 
     private Long ensureRoleId(

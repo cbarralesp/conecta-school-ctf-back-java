@@ -35,6 +35,11 @@ public class PlanningUnitService implements
         UpdatePlanningUnitDetailsUseCase,
         DeletePlanningUnitUseCase {
 
+    private static final String MANUAL_UNIT_OBJECTIVES_TEMPLATE =
+            "Unidad manual registrada sin OA oficiales asociados para %s.";
+    private static final String MANUAL_UNIT_INDICATORS_TEMPLATE =
+            "Unidad manual registrada sin indicadores oficiales asociados para %s.";
+
     private final PlanningUnitRepositoryPort planningUnitRepositoryPort;
     private final PlanningCatalogRepositoryPort planningCatalogRepositoryPort;
 
@@ -116,8 +121,8 @@ public class PlanningUnitService implements
                 command.estimatedWeeks() == null ? 1 : command.estimatedWeeks(),
                 command.plannedClasses() == null ? 0 : command.plannedClasses(),
                 normalizeNullable(command.generalDescription()),
-                normalizeNullable(command.learningObjectives()),
-                normalizeNullable(command.achievementIndicators())
+                resolveLearningObjectives(command),
+                resolveAchievementIndicators(command)
         );
     }
 
@@ -160,10 +165,10 @@ public class PlanningUnitService implements
                 command.startDate(),
                 command.endDate(),
                 command.estimatedWeeks() == null ? 1 : command.estimatedWeeks(),
-                command.plannedClasses() == null ? 0 : command.plannedClasses(),
+                0,
                 normalizeNullable(command.generalDescription()),
-                normalizeNullable(command.learningObjectives()),
-                normalizeNullable(command.achievementIndicators()),
+                resolveLearningObjectives(command),
+                resolveAchievementIndicators(command),
                 status,
                 createdByUserId
         );
@@ -198,14 +203,6 @@ public class PlanningUnitService implements
             throw new IllegalArgumentException("Las clases planificadas no pueden ser negativas");
         }
 
-        if (status != PlanningUnitStatus.BORRADOR) {
-            if (command.learningObjectives() == null || command.learningObjectives().isBlank()) {
-                throw new IllegalArgumentException("Los objetivos de aprendizaje son obligatorios");
-            }
-            if (command.achievementIndicators() == null || command.achievementIndicators().isBlank()) {
-                throw new IllegalArgumentException("Los indicadores de logro son obligatorios");
-            }
-        }
     }
 
     private List<PlanningOptionItem> buildWeekOptions() {
@@ -216,5 +213,21 @@ public class PlanningUnitService implements
 
     private String normalizeNullable(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String resolveLearningObjectives(PlanningUnitCommand command) {
+        String normalized = normalizeNullable(command.learningObjectives());
+        if (normalized != null) {
+            return normalized;
+        }
+        return MANUAL_UNIT_OBJECTIVES_TEMPLATE.formatted(command.name().trim());
+    }
+
+    private String resolveAchievementIndicators(PlanningUnitCommand command) {
+        String normalized = normalizeNullable(command.achievementIndicators());
+        if (normalized != null) {
+            return normalized;
+        }
+        return MANUAL_UNIT_INDICATORS_TEMPLATE.formatted(command.name().trim());
     }
 }

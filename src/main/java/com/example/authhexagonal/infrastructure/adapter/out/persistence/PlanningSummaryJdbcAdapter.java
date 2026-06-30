@@ -42,13 +42,13 @@ public class PlanningSummaryJdbcAdapter implements PlanningSummaryRepositoryPort
                     COALESCE(SUM(unit_row.total_documents), 0) AS total_documents,
                     COALESCE(SUM(unit_row.visible_documents), 0) AS visible_documents,
                     CASE
-                        WHEN COALESCE(SUM(unit_row.planned_classes), 0) <= 0 THEN
+                        WHEN COALESCE(SUM(unit_row.total_classes), 0) <= 0 THEN
                             CASE WHEN COALESCE(SUM(unit_row.published_classes), 0) > 0 THEN 100 ELSE 0 END
                         ELSE LEAST(
                             100,
                             ROUND(
                                 (COALESCE(SUM(unit_row.published_classes), 0)::numeric
-                                / NULLIF(SUM(unit_row.planned_classes), 0)::numeric) * 100
+                                / NULLIF(SUM(unit_row.total_classes), 0)::numeric) * 100
                             )::int
                         )
                     END AS semester_progress
@@ -241,12 +241,13 @@ public class PlanningSummaryJdbcAdapter implements PlanningSummaryRepositoryPort
 
     private PlanningSummaryUnit mapSummaryUnit(ResultSet rs) throws SQLException {
         int plannedClasses = rs.getInt("planned_classes");
+        int totalClasses = rs.getInt("total_classes");
         int publishedClasses = rs.getInt("published_classes");
         int progressPercent;
-        if (plannedClasses <= 0) {
+        if (totalClasses <= 0) {
             progressPercent = publishedClasses > 0 ? 100 : 0;
         } else {
-            progressPercent = Math.min(100, (int) Math.round((publishedClasses * 100.0) / plannedClasses));
+            progressPercent = Math.min(100, (int) Math.round((publishedClasses * 100.0) / totalClasses));
         }
 
         PlanningSummaryStatus status = progressPercent <= 0
@@ -276,6 +277,8 @@ public class PlanningSummaryJdbcAdapter implements PlanningSummaryRepositoryPort
                 rs.getInt("total_classes"),
                 publishedClasses,
                 rs.getInt("total_documents"),
+                rs.getDate("start_date") == null ? null : rs.getDate("start_date").toLocalDate(),
+                rs.getDate("end_date") == null ? null : rs.getDate("end_date").toLocalDate(),
                 weekRange,
                 progressPercent,
                 status

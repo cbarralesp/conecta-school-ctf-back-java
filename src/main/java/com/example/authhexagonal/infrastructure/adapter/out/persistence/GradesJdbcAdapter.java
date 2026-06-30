@@ -391,6 +391,75 @@ public class GradesJdbcAdapter implements ManageGradesPort {
     }
 
     @Override
+    public Optional<PedagogicalQuestionBankRow> findPedagogicalQuestionBankQuestionById(Long questionId) {
+        if (!tableExists("PEDAGOGICAL_QUESTION_BANK")) {
+            return Optional.empty();
+        }
+        return jdbcTemplate.query("""
+                SELECT "ID", "AREA_KEY", "LEVEL_CODE", "QUESTION_KIND", "QUESTION_TEXT", "SORT_ORDER"
+                FROM "PEDAGOGICAL_QUESTION_BANK"
+                WHERE "ID" = ?
+                """, (rs, rowNum) -> new PedagogicalQuestionBankRow(
+                rs.getLong("ID"),
+                rs.getString("AREA_KEY"),
+                rs.getString("LEVEL_CODE"),
+                rs.getString("QUESTION_KIND"),
+                rs.getString("QUESTION_TEXT"),
+                rs.getInt("SORT_ORDER")
+        ), questionId).stream().findFirst();
+    }
+
+    @Override
+    public Long createPedagogicalQuestionBankQuestion(String areaKey, String levelCode, String questionKind, String questionText) {
+        syncSequence("PEDAGOGICAL_QUESTION_BANK", "ID");
+        Integer sortOrder = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(MAX("SORT_ORDER"), 0) + 1
+                FROM "PEDAGOGICAL_QUESTION_BANK"
+                WHERE "AREA_KEY" = ?
+                  AND "LEVEL_CODE" = ?
+                  AND "QUESTION_KIND" = ?
+                  AND "ACTIVO" = TRUE
+                """, Integer.class, areaKey, levelCode, questionKind);
+
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO "PEDAGOGICAL_QUESTION_BANK" (
+                    "AREA_KEY",
+                    "LEVEL_CODE",
+                    "QUESTION_KIND",
+                    "QUESTION_TEXT",
+                    "SORT_ORDER",
+                    "ACTIVO",
+                    "CREADO_EN",
+                    "ACTUALIZADO_EN"
+                )
+                VALUES (?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING "ID"
+                """, Long.class, areaKey, levelCode, questionKind, questionText, sortOrder == null ? 1 : sortOrder);
+    }
+
+    @Override
+    public boolean updatePedagogicalQuestionBankQuestion(Long questionId, String questionText) {
+        return jdbcTemplate.update("""
+                UPDATE "PEDAGOGICAL_QUESTION_BANK"
+                SET "QUESTION_TEXT" = ?,
+                    "ACTUALIZADO_EN" = CURRENT_TIMESTAMP
+                WHERE "ID" = ?
+                  AND "ACTIVO" = TRUE
+                """, questionText, questionId) > 0;
+    }
+
+    @Override
+    public boolean deactivatePedagogicalQuestionBankQuestion(Long questionId) {
+        return jdbcTemplate.update("""
+                UPDATE "PEDAGOGICAL_QUESTION_BANK"
+                SET "ACTIVO" = FALSE,
+                    "ACTUALIZADO_EN" = CURRENT_TIMESTAMP
+                WHERE "ID" = ?
+                  AND "ACTIVO" = TRUE
+                """, questionId) > 0;
+    }
+
+    @Override
     public Optional<String> findPedagogicalReportContent(Long courseId, Long periodId, Long studentId) {
         return jdbcTemplate.query("""
                 SELECT "CONTENIDO_JSON"::text AS content_json

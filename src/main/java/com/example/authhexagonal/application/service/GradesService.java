@@ -19,8 +19,10 @@ import com.example.authhexagonal.domain.model.GradeStudentInfo;
 import com.example.authhexagonal.domain.model.GradeSubjectTab;
 import com.example.authhexagonal.domain.model.AttendanceStudentSummary;
 import com.example.authhexagonal.domain.model.PedagogicalQuestionBankArea;
+import com.example.authhexagonal.domain.model.PedagogicalQuestionBankCreateCommand;
 import com.example.authhexagonal.domain.model.PedagogicalQuestionBankQuestion;
 import com.example.authhexagonal.domain.model.PedagogicalQuestionBankRow;
+import com.example.authhexagonal.domain.model.PedagogicalQuestionBankUpdateCommand;
 import com.example.authhexagonal.domain.model.PedagogicalReportArea;
 import com.example.authhexagonal.domain.model.PedagogicalReportContent;
 import com.example.authhexagonal.domain.model.PedagogicalReportItem;
@@ -40,6 +42,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -200,7 +203,7 @@ public class GradesService implements ManageGradesUseCase {
                         PedagogicalQuestionBankRow::areaKey,
                         LinkedHashMap::new,
                         Collectors.mapping(
-                                row -> new PedagogicalQuestionBankQuestion(row.id(), row.questionText(), row.sortOrder()),
+                                row -> new PedagogicalQuestionBankQuestion(row.id(), row.levelCode(), row.questionKind(), row.questionText(), row.sortOrder()),
                                 Collectors.collectingAndThen(Collectors.toList(), list -> list.stream()
                                         .sorted(Comparator.comparing(PedagogicalQuestionBankQuestion::sortOrder).thenComparing(PedagogicalQuestionBankQuestion::id))
                                         .toList())
@@ -211,10 +214,53 @@ public class GradesService implements ManageGradesUseCase {
                 .map(entry -> new PedagogicalQuestionBankArea(
                         entry.getKey(),
                         areaTitle(entry.getKey()),
+                        resolveAreaLevelCode(entry.getValue(), resolvedLevelCode),
                         areaQuestionKind(entry.getKey()),
                         entry.getValue()
                 ))
                 .toList();
+    }
+
+    @Override
+    public PedagogicalQuestionBankQuestion createPedagogicalQuestionBankQuestion(PedagogicalQuestionBankCreateCommand command) {
+        String areaKey = safeText(command.areaKey());
+        String levelCode = normalizeLevelCode(command.levelCode());
+        String questionKind = normalizeQuestionKind(command.questionKind());
+        String questionText = safeText(command.questionText());
+        if (areaKey.isBlank() || questionText.isBlank()) {
+            throw new IllegalArgumentException("Area y pregunta son obligatorias");
+        }
+
+        Long questionId = manageGradesPort.createPedagogicalQuestionBankQuestion(areaKey, levelCode, questionKind, questionText);
+        return manageGradesPort.findPedagogicalQuestionBankQuestionById(questionId)
+                .map(this::toPedagogicalQuestionBankQuestion)
+                .orElseThrow(() -> new IllegalArgumentException("No fue posible crear la pregunta pedagogica"));
+    }
+
+    @Override
+    public PedagogicalQuestionBankQuestion updatePedagogicalQuestionBankQuestion(PedagogicalQuestionBankUpdateCommand command) {
+        String questionText = safeText(command.questionText());
+        if (command.questionId() == null || command.questionId() <= 0 || questionText.isBlank()) {
+            throw new IllegalArgumentException("Pregunta invalida");
+        }
+        boolean updated = manageGradesPort.updatePedagogicalQuestionBankQuestion(command.questionId(), questionText);
+        if (!updated) {
+            throw new IllegalArgumentException("No fue posible actualizar la pregunta pedagogica");
+        }
+        return manageGradesPort.findPedagogicalQuestionBankQuestionById(command.questionId())
+                .map(this::toPedagogicalQuestionBankQuestion)
+                .orElseThrow(() -> new IllegalArgumentException("No fue posible obtener la pregunta actualizada"));
+    }
+
+    @Override
+    public void deletePedagogicalQuestionBankQuestion(Long questionId) {
+        if (questionId == null || questionId <= 0) {
+            throw new IllegalArgumentException("Pregunta invalida");
+        }
+        boolean deleted = manageGradesPort.deactivatePedagogicalQuestionBankQuestion(questionId);
+        if (!deleted) {
+            throw new IllegalArgumentException("No fue posible eliminar la pregunta pedagogica");
+        }
     }
 
     @Override
@@ -391,6 +437,29 @@ public class GradesService implements ManageGradesUseCase {
                 .findFirst()
                 .map(List::of)
                 .orElseGet(() -> List.of(""));
+    }
+
+    private PedagogicalQuestionBankQuestion toPedagogicalQuestionBankQuestion(PedagogicalQuestionBankRow row) {
+        return new PedagogicalQuestionBankQuestion(
+                row.id(),
+                row.levelCode(),
+                row.questionKind(),
+                safeText(row.questionText()),
+                row.sortOrder()
+        );
+    }
+
+    private String resolveAreaLevelCode(List<PedagogicalQuestionBankQuestion> questions, String requestedLevelCode) {
+        return questions.stream()
+                .map(PedagogicalQuestionBankQuestion::levelCode)
+                .filter(level -> level != null && !level.isBlank())
+                .findFirst()
+                .orElse(requestedLevelCode);
+    }
+
+    private String normalizeQuestionKind(String questionKind) {
+        String normalized = safeText(questionKind).toUpperCase(Locale.ROOT);
+        return "RECOMMENDATION".equals(normalized) ? "RECOMMENDATION" : "AREA";
     }
 
     private PedagogicalReportArea mergeArea(PedagogicalReportArea defaultArea, PedagogicalReportArea currentArea) {

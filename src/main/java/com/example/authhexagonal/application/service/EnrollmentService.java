@@ -17,12 +17,15 @@ import com.example.authhexagonal.domain.port.out.ManageEnrollmentsPort;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentFamilyContactRequest;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentAccessPreviewRequest;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentAccessPreviewResponse;
+import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentCourseSelectionRequest;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentPickupContactRequest;
+import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentRenewalRequest;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -37,16 +40,16 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
     }
 
     @Override
-    public EnrollmentOverview findOverview(String search, Long courseId, String status, Integer page, Integer size) {
+    public EnrollmentOverview findOverview(Integer schoolYear, String search, Long courseId, String status, Integer page, Integer size) {
         int normalizedPage = page == null ? 0 : Math.max(page, 0);
-        EnrollmentSummary summary = manageEnrollmentsPort.summarizeEnrollments(search, courseId, status);
+        EnrollmentSummary summary = manageEnrollmentsPort.summarizeEnrollments(schoolYear, search, courseId, status);
         int normalizedSize = size == null ? Math.max(summary.total(), 1) : Math.max(size, 1);
         int totalPages = summary.total() == 0 ? 0 : (int) Math.ceil((double) summary.total() / normalizedSize);
 
         return new EnrollmentOverview(
                 summary,
-                manageEnrollmentsPort.findActiveCourses(),
-                manageEnrollmentsPort.findEnrollments(search, courseId, status, normalizedPage, normalizedSize),
+                manageEnrollmentsPort.findActiveCourses(schoolYear),
+                manageEnrollmentsPort.findEnrollments(schoolYear, search, courseId, status, normalizedPage, normalizedSize),
                 new EnrollmentPagination(
                         normalizedPage,
                         normalizedSize,
@@ -166,6 +169,44 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
     }
 
     @Override
+    @Transactional
+    public EnrollmentDetail renew(Long enrollmentId, EnrollmentRenewalRequest request) {
+        EnrollmentDetail current = findById(enrollmentId);
+        Long resolvedCourseId = resolveCourseId(request.courseId(), request.courseSelection());
+        int targetSchoolYear = manageEnrollmentsPort.findCourseSchoolYear(resolvedCourseId)
+                .orElseThrow(() -> new IllegalArgumentException("Selected course is not available"));
+
+        if (manageEnrollmentsPort.hasActiveEnrollmentForStudentInSchoolYear(current.studentId(), targetSchoolYear)) {
+            throw new IllegalArgumentException("Student already has an active enrollment for the selected school year");
+        }
+
+        EnrollmentEstablishment establishment = new EnrollmentEstablishment(
+                current.establishment().regionId(),
+                current.establishment().communeId(),
+                current.establishment().name(),
+                String.valueOf(targetSchoolYear),
+                current.establishment().dependency(),
+                current.establishment().region(),
+                current.establishment().commune(),
+                current.establishment().address()
+        );
+
+        Long renewedEnrollmentId = manageEnrollmentsPort.createEnrollment(
+                current.studentId(),
+                resolvedCourseId,
+                "ACTIVO",
+                request.enrollmentDate() == null ? LocalDate.now() : request.enrollmentDate(),
+                establishment
+        );
+        manageEnrollmentsPort.replaceGuardian(renewedEnrollmentId, current.guardian());
+        manageEnrollmentsPort.replaceFather(renewedEnrollmentId, current.father());
+        manageEnrollmentsPort.replaceMother(renewedEnrollmentId, current.mother());
+        manageEnrollmentsPort.replacePickupContacts(renewedEnrollmentId, current.pickupContacts());
+        manageEnrollmentsPort.replaceDocuments(renewedEnrollmentId, current.documents());
+        return findById(renewedEnrollmentId);
+    }
+
+    @Override
     public EnrollmentAccessPreviewResponse previewAccess(EnrollmentAccessPreviewRequest request) {
         return new EnrollmentAccessPreviewResponse(
                 manageEnrollmentsPort.previewStudentUsername(
@@ -207,19 +248,23 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
     }
 
     private Long resolveCourseId(EnrollmentRequest request) {
-        if (request.courseId() != null && request.courseId() > 0 && manageEnrollmentsPort.existsActiveCourse(request.courseId())) {
-            return request.courseId();
+        return resolveCourseId(request.courseId(), request.courseSelection());
+    }
+
+    private Long resolveCourseId(Long courseId, EnrollmentCourseSelectionRequest courseSelection) {
+        if (courseId != null && courseId > 0 && manageEnrollmentsPort.existsActiveCourse(courseId)) {
+            return courseId;
         }
 
-        if (request.courseSelection() == null) {
+        if (courseSelection == null) {
             throw new IllegalArgumentException("Selected course is not available");
         }
 
-        String baseName = request.courseSelection().baseName() == null ? "" : request.courseSelection().baseName().trim();
-        String level = request.courseSelection().level() == null ? "" : request.courseSelection().level().trim();
-        String letter = request.courseSelection().letter() == null ? "" : request.courseSelection().letter().trim();
-        String schoolYearValue = request.courseSelection().schoolYear() == null ? "" : request.courseSelection().schoolYear().trim();
-        String scheduleType = request.courseSelection().scheduleType() == null ? "" : request.courseSelection().scheduleType().trim();
+        String baseName = courseSelection.baseName() == null ? "" : courseSelection.baseName().trim();
+        String level = courseSelection.level() == null ? "" : courseSelection.level().trim();
+        String letter = courseSelection.letter() == null ? "" : courseSelection.letter().trim();
+        String schoolYearValue = courseSelection.schoolYear() == null ? "" : courseSelection.schoolYear().trim();
+        String scheduleType = courseSelection.scheduleType() == null ? "" : courseSelection.scheduleType().trim();
 
         if (baseName.isBlank() || level.isBlank() || letter.isBlank() || schoolYearValue.isBlank() || scheduleType.isBlank()) {
             throw new IllegalArgumentException("Selected course is not available");

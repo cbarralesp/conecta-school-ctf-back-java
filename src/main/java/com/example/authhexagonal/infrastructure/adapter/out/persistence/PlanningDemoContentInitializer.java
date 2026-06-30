@@ -3,6 +3,7 @@ package com.example.authhexagonal.infrastructure.adapter.out.persistence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,7 @@ import java.time.LocalDate;
 import java.util.Optional;
 
 @Component
+@ConditionalOnProperty(name = "app.planning.demo.enabled", havingValue = "true")
 public class PlanningDemoContentInitializer implements CommandLineRunner {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PlanningDemoContentInitializer.class);

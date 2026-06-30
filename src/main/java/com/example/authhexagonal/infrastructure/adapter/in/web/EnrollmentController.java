@@ -5,6 +5,7 @@ import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentDet
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentAccessPreviewRequest;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentAccessPreviewResponse;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentOverviewResponse;
+import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentRenewalRequest;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -31,6 +32,7 @@ public class EnrollmentController {
 
     @GetMapping
     public EnrollmentOverviewResponse findOverview(
+            @RequestParam(name = "schoolYear", required = false) Integer schoolYear,
             @RequestParam(name = "search", required = false) String search,
             @RequestParam(name = "courseId", required = false) Long courseId,
             @RequestParam(name = "status", required = false) String status,
@@ -38,7 +40,7 @@ public class EnrollmentController {
             @RequestParam(name = "size", required = false) Integer size
     ) {
         return EnrollmentOverviewResponse.fromDomain(
-                manageEnrollmentsUseCase.findOverview(search, courseId, status, page, size)
+                manageEnrollmentsUseCase.findOverview(schoolYear, search, courseId, status, page, size)
         );
     }
 
@@ -59,6 +61,14 @@ public class EnrollmentController {
             @Valid @RequestBody EnrollmentRequest request
     ) {
         return EnrollmentDetailResponse.fromDomain(manageEnrollmentsUseCase.update(enrollmentId, request));
+    }
+
+    @PostMapping("/{enrollmentId}/renovar")
+    public EnrollmentDetailResponse renew(
+            @PathVariable("enrollmentId") Long enrollmentId,
+            @Valid @RequestBody EnrollmentRenewalRequest request
+    ) {
+        return EnrollmentDetailResponse.fromDomain(manageEnrollmentsUseCase.renew(enrollmentId, request));
     }
 
     @PostMapping("/access-preview")

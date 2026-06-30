@@ -4,8 +4,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StreamUtils;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 @Component
 public class SchemaCompatibilityInitializer {
@@ -26,6 +31,7 @@ public class SchemaCompatibilityInitializer {
         ensureScheduleCourseScope();
         ensureGradeEvaluationColumns();
         ensurePedagogicalReportsSchema();
+        ensurePedagogicalQuestionBankSchema();
         ensureCourseNormalizationSchema();
         ensureSubjectEvaluationType();
         ensureConceptualGradeValue();
@@ -271,6 +277,22 @@ public class SchemaCompatibilityInitializer {
                 """);
     }
 
+    private void ensurePedagogicalQuestionBankSchema() {
+        LOGGER.info("Verificando compatibilidad minima de esquema para banco pedagogico de preguntas");
+
+        boolean tableExists = tableExists("PEDAGOGICAL_QUESTION_BANK");
+        Integer rowCount = tableExists
+                ? jdbcTemplate.queryForObject(""" 
+                SELECT COUNT(*)
+                FROM "PEDAGOGICAL_QUESTION_BANK"
+                """, Integer.class)
+                : 0;
+
+        if (!tableExists || rowCount == null || rowCount == 0) {
+            jdbcTemplate.execute(readSqlResource("db/migration/V19__pedagogical_question_bank.sql"));
+        }
+    }
+
     private void ensureEnrollmentExtendedContacts() {
         jdbcTemplate.execute("""
                 ALTER TABLE "ALUMNOS"
@@ -338,6 +360,26 @@ public class SchemaCompatibilityInitializer {
                     "ACTIVO" boolean DEFAULT TRUE NOT NULL
                 )
                 """);
+    }
+
+    private boolean tableExists(String tableName) {
+        Boolean exists = jdbcTemplate.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_name = ?
+                )
+                """, Boolean.class, tableName);
+        return Boolean.TRUE.equals(exists);
+    }
+
+    private String readSqlResource(String resourcePath) {
+        try {
+            return StreamUtils.copyToString(new ClassPathResource(resourcePath).getInputStream(), StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("No fue posible leer el recurso SQL " + resourcePath, exception);
+        }
     }
 
     private void ensureCourseNormalizationSchema() {
