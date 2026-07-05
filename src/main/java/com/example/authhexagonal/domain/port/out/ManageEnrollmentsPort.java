@@ -120,6 +120,8 @@ public interface ManageEnrollmentsPort {
 
     void replaceDocuments(Long enrollmentId, List<EnrollmentDocument> documents);
 
+    EnrollmentDocument upsertDocument(Long enrollmentId, EnrollmentDocument document);
+
     EnrollmentStudentAccess provisionStudentAccess(
             String studentRun,
             String studentName,

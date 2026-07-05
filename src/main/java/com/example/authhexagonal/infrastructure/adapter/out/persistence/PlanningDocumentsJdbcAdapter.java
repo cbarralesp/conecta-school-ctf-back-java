@@ -79,10 +79,7 @@ public class PlanningDocumentsJdbcAdapter implements PlanningDocumentRepositoryP
         sql.append(" LEFT JOIN \"USUARIOS\" creator ON creator.\"ID\" = pd.\"CREADO_POR_USUARIO_ID\"");
         sql.append(" WHERE COALESCE(pd.\"ELIMINADO\", FALSE) = FALSE");
         sql.append(" AND COALESCE(pd.\"ESTADO\", 'ACTIVO') = 'ACTIVO'");
-        sql.append(" AND (");
-        sql.append("   cu.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')");
-        sql.append("   OR pr.\"PERSONA_ID\" = cu.persona_id");
-        sql.append(" )");
+        sql.append(" AND 1 = 1");
 
         List<Object> args = new ArrayList<>();
         args.add(username);

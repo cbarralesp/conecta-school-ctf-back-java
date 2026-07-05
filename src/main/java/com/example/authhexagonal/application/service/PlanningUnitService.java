@@ -165,7 +165,7 @@ public class PlanningUnitService implements
                 command.startDate(),
                 command.endDate(),
                 command.estimatedWeeks() == null ? 1 : command.estimatedWeeks(),
-                0,
+                command.plannedClasses() == null ? 0 : command.plannedClasses(),
                 normalizeNullable(command.generalDescription()),
                 resolveLearningObjectives(command),
                 resolveAchievementIndicators(command),

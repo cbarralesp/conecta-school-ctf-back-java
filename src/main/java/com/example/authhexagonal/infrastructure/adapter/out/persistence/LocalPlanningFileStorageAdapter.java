@@ -2,6 +2,7 @@ package com.example.authhexagonal.infrastructure.adapter.out.persistence;
 
 import com.example.authhexagonal.domain.model.StoredFileReference;
 import com.example.authhexagonal.domain.port.out.FileStoragePort;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -19,18 +20,43 @@ import java.util.UUID;
 public class LocalPlanningFileStorageAdapter implements FileStoragePort {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-    private static final Path BASE_DIRECTORY = Paths.get("uploads", "planning-classes");
+    private final Path uploadsRoot;
+
+    public LocalPlanningFileStorageAdapter(@Value("${app.uploads.root:uploads}") String uploadsRoot) {
+        this.uploadsRoot = Paths.get(uploadsRoot).toAbsolutePath().normalize();
+    }
 
     @Override
     public StoredFileReference storePlanningClassDocument(String originalName, String mimeType, byte[] content) {
+        return storeDocument(uploadsRoot.resolve("planning-classes"), originalName, mimeType, content);
+    }
+
+    @Override
+    public StoredFileReference storeEnrollmentDocument(
+            String courseFolder,
+            String studentFolder,
+            String documentKey,
+            String originalName,
+            String mimeType,
+            byte[] content
+    ) {
+        Path enrollmentDirectory = uploadsRoot
+                .resolve("matriculas")
+                .resolve(slugify(courseFolder == null ? "" : courseFolder))
+                .resolve(slugify(studentFolder == null ? "" : studentFolder))
+                .resolve(slugify(documentKey == null ? "" : documentKey));
+        return storeDocument(enrollmentDirectory, originalName, mimeType, content);
+    }
+
+    private StoredFileReference storeDocument(Path baseDirectory, String originalName, String mimeType, byte[] content) {
         try {
-            Files.createDirectories(BASE_DIRECTORY);
+            Files.createDirectories(baseDirectory);
             String extension = extractExtension(originalName);
             String baseName = slugify(removeExtension(originalName));
             String timestamp = LocalDateTime.now().format(FORMATTER);
             String storedName = baseName + "-" + timestamp + "-" + UUID.randomUUID().toString().substring(0, 8)
                     + "." + extension;
-            Path targetPath = BASE_DIRECTORY.resolve(storedName);
+            Path targetPath = baseDirectory.resolve(storedName).toAbsolutePath().normalize();
             Files.write(targetPath, content, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
             return new StoredFileReference(
@@ -53,7 +79,7 @@ public class LocalPlanningFileStorageAdapter implements FileStoragePort {
         }
 
         try {
-            return Files.readAllBytes(Paths.get(filePath));
+            return Files.readAllBytes(resolveReadablePath(filePath));
         } catch (IOException exception) {
             throw new IllegalStateException("No fue posible leer el documento adjunto", exception);
         }
@@ -66,10 +92,34 @@ public class LocalPlanningFileStorageAdapter implements FileStoragePort {
         }
 
         try {
-            Files.deleteIfExists(Paths.get(filePath));
+            Files.deleteIfExists(resolveReadablePath(filePath));
         } catch (IOException exception) {
             throw new IllegalStateException("No fue posible eliminar el documento adjunto", exception);
         }
+    }
+
+    private Path resolveReadablePath(String filePath) throws IOException {
+        Path directPath = Paths.get(filePath);
+        if (Files.exists(directPath)) {
+            return directPath;
+        }
+
+        Path absolutePath = directPath.toAbsolutePath().normalize();
+        if (Files.exists(absolutePath)) {
+            return absolutePath;
+        }
+
+        if (!directPath.isAbsolute()) {
+            Path projectRelativePath = Paths.get("Backend-CTF-SCHOOL", "backend-api-escolar")
+                    .resolve(directPath)
+                    .toAbsolutePath()
+                    .normalize();
+            if (Files.exists(projectRelativePath)) {
+                return projectRelativePath;
+            }
+        }
+
+        throw new IOException("No existe el archivo: " + filePath);
     }
 
     private String removeExtension(String value) {

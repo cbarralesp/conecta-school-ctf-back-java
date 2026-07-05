@@ -3,6 +3,7 @@ package com.example.authhexagonal.application.service;
 import com.example.authhexagonal.domain.exception.ResourceNotFoundException;
 import com.example.authhexagonal.domain.model.EnrollmentDetail;
 import com.example.authhexagonal.domain.model.EnrollmentDocument;
+import com.example.authhexagonal.domain.model.EnrollmentDocumentDownload;
 import com.example.authhexagonal.domain.model.EnrollmentEstablishment;
 import com.example.authhexagonal.domain.model.EnrollmentFamilyContact;
 import com.example.authhexagonal.domain.model.EnrollmentGuardianAccess;
@@ -12,7 +13,9 @@ import com.example.authhexagonal.domain.model.EnrollmentPagination;
 import com.example.authhexagonal.domain.model.EnrollmentPickupContact;
 import com.example.authhexagonal.domain.model.EnrollmentSummary;
 import com.example.authhexagonal.domain.model.EnrollmentStudentAccess;
+import com.example.authhexagonal.domain.model.StoredFileReference;
 import com.example.authhexagonal.domain.port.in.ManageEnrollmentsUseCase;
+import com.example.authhexagonal.domain.port.out.FileStoragePort;
 import com.example.authhexagonal.domain.port.out.ManageEnrollmentsPort;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentFamilyContactRequest;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentAccessPreviewRequest;
@@ -26,17 +29,37 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Locale;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class EnrollmentService implements ManageEnrollmentsUseCase {
 
+    private static final long MAX_ENROLLMENT_DOCUMENT_SIZE_BYTES = 20L * 1024L * 1024L;
+    private static final Set<String> ALLOWED_ENROLLMENT_DOCUMENT_EXTENSIONS = Set.of(
+            "pdf", "png", "jpg", "jpeg", "webp", "doc", "docx"
+    );
+    private static final Map<String, String> ENROLLMENT_DOCUMENT_KEY_ALIASES = Map.of(
+            "image-permission", "image-consent",
+            "junaeb-sep", "other",
+            "migratory-docs", "other",
+            "priority-certificate", "other"
+    );
+
     private final ManageEnrollmentsPort manageEnrollmentsPort;
     private final PasswordEncoder passwordEncoder;
+    private final FileStoragePort fileStoragePort;
 
-    public EnrollmentService(ManageEnrollmentsPort manageEnrollmentsPort, PasswordEncoder passwordEncoder) {
+    public EnrollmentService(
+            ManageEnrollmentsPort manageEnrollmentsPort,
+            PasswordEncoder passwordEncoder,
+            FileStoragePort fileStoragePort
+    ) {
         this.manageEnrollmentsPort = manageEnrollmentsPort;
         this.passwordEncoder = passwordEncoder;
+        this.fileStoragePort = fileStoragePort;
     }
 
     @Override
@@ -224,6 +247,67 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
 
     @Override
     @Transactional
+    public EnrollmentDocument uploadDocument(
+            Long enrollmentId,
+            String documentKey,
+            String originalName,
+            String mimeType,
+            byte[] content
+    ) {
+        EnrollmentDetail current = findById(enrollmentId);
+        validateDocumentUpload(documentKey, originalName, content);
+        String normalizedDocumentKey = normalizeDocumentKey(documentKey);
+
+        current.documents().stream()
+                .filter(document -> document.documentKey().equals(normalizedDocumentKey))
+                .map(EnrollmentDocument::filePath)
+                .filter(path -> path != null && !path.isBlank())
+                .findFirst()
+                .ifPresent(fileStoragePort::delete);
+
+        StoredFileReference storedFile = fileStoragePort.storeEnrollmentDocument(
+                buildCourseFolder(current),
+                buildStudentFolder(current),
+                normalizedDocumentKey,
+                originalName,
+                mimeType,
+                content
+        );
+
+        String normalizedMimeType = storedFile.mimeType() == null || storedFile.mimeType().isBlank()
+                ? "application/octet-stream"
+                : storedFile.mimeType();
+
+        return manageEnrollmentsPort.upsertDocument(enrollmentId, new EnrollmentDocument(
+                null,
+                normalizedDocumentKey,
+                storedFile.originalName(),
+                "local",
+                buildStorageKey(current, normalizedDocumentKey, storedFile.storedName()),
+                null,
+                null,
+                normalizedMimeType,
+                storedFile.sizeBytes(),
+                storedFile.filePath()
+        ));
+    }
+
+    @Override
+    public EnrollmentDocumentDownload downloadDocument(Long enrollmentId, Long documentId) {
+        EnrollmentDocument document = findById(enrollmentId).documents().stream()
+                .filter(item -> item.id() != null && item.id().equals(documentId))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Documento de matricula no encontrado"));
+
+        if (document.filePath() == null || document.filePath().isBlank()) {
+            throw new ResourceNotFoundException("El documento no tiene archivo asociado");
+        }
+
+        return new EnrollmentDocumentDownload(document, fileStoragePort.read(document.filePath()));
+    }
+
+    @Override
+    @Transactional
     public void delete(Long enrollmentId) {
         findById(enrollmentId);
         if (manageEnrollmentsPort.isEnrollmentInactive(enrollmentId)) {
@@ -378,8 +462,13 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
         return request.documents().stream()
                 .map(document -> new EnrollmentDocument(
                         null,
-                        document.documentKey(),
+                        normalizeDocumentKey(document.documentKey()),
                         document.fileName(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
                         null,
                         null
                 ))
@@ -405,6 +494,76 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
 
     private String blankToEmpty(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private void validateDocumentUpload(String documentKey, String originalName, byte[] content) {
+        if (documentKey == null || documentKey.isBlank()) {
+            throw new IllegalArgumentException("La clave del documento no es valida");
+        }
+        if (originalName == null || originalName.isBlank()) {
+            throw new IllegalArgumentException("El archivo no tiene nombre valido");
+        }
+        if (content == null || content.length == 0) {
+            throw new IllegalArgumentException("El archivo adjunto esta vacio");
+        }
+        if (content.length > MAX_ENROLLMENT_DOCUMENT_SIZE_BYTES) {
+            throw new IllegalArgumentException("El archivo supera el limite de 20 MB");
+        }
+
+        String extension = extractExtension(originalName);
+        if (!ALLOWED_ENROLLMENT_DOCUMENT_EXTENSIONS.contains(extension)) {
+            throw new IllegalArgumentException("Solo se permiten archivos PDF, DOC, DOCX, JPG, JPEG, PNG o WEBP");
+        }
+    }
+
+    private String normalizeDocumentKey(String documentKey) {
+        String normalizedKey = documentKey == null ? "" : documentKey.trim();
+        return ENROLLMENT_DOCUMENT_KEY_ALIASES.getOrDefault(normalizedKey, normalizedKey);
+    }
+
+    private String extractExtension(String originalName) {
+        int dotIndex = originalName.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex == originalName.length() - 1) {
+            return "";
+        }
+        return originalName.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private String buildStorageKey(EnrollmentDetail enrollment, String documentKey, String storedName) {
+        return "matriculas/"
+                + slugifyStoragePart(buildCourseFolder(enrollment))
+                + "/"
+                + slugifyStoragePart(buildStudentFolder(enrollment))
+                + "/"
+                + slugifyStoragePart(documentKey)
+                + "/"
+                + storedName;
+    }
+
+    private String buildCourseFolder(EnrollmentDetail enrollment) {
+        String courseName = enrollment.courseName() == null ? "" : enrollment.courseName().trim();
+        if (!courseName.isBlank()) {
+            return courseName;
+        }
+
+        String level = enrollment.courseLevel() == null ? "" : enrollment.courseLevel().trim();
+        String letter = enrollment.courseLetter() == null ? "" : enrollment.courseLetter().trim();
+        return (level + " " + letter).trim();
+    }
+
+    private String buildStudentFolder(EnrollmentDetail enrollment) {
+        return (blankToEmpty(enrollment.studentName()) + " " + blankToEmpty(enrollment.studentLastName())).trim();
+    }
+
+    private String slugifyStoragePart(String value) {
+        if (value == null || value.isBlank()) {
+            return "sin-dato";
+        }
+        return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replaceAll("[^a-zA-Z0-9]+", "-")
+                .replaceAll("(^-|-$)", "")
+                .toLowerCase(Locale.ROOT);
     }
 
     private EnrollmentStudentAccess resolveStudentAccess(EnrollmentRequest request) {

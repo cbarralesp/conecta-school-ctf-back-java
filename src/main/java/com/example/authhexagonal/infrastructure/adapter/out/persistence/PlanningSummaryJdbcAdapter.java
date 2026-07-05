@@ -83,10 +83,7 @@ public class PlanningSummaryJdbcAdapter implements PlanningSummaryRepositoryPort
                 JOIN "PROFESORES" pr ON pr."ID" = cd."PROFESOR_ID"
                 JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID"
                 JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID"
-                WHERE (
-                    app_user.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                    OR pr."PERSONA_ID" = app_user.persona_id
-                )
+                WHERE 1 = 1
                 """);
         args.add(username);
 
@@ -138,10 +135,7 @@ public class PlanningSummaryJdbcAdapter implements PlanningSummaryRepositoryPort
                     ON pd."UNIDAD_ID" = up."ID"
                    AND COALESCE(pd."ELIMINADO", FALSE) = FALSE
                    AND COALESCE(pd."ESTADO", 'ACTIVO') = 'ACTIVO'
-                WHERE (
-                    app_user.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                    OR pr."PERSONA_ID" = app_user.persona_id
-                )
+                WHERE 1 = 1
                 """);
         args.add(username);
 

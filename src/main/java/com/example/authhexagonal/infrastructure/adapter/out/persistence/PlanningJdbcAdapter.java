@@ -54,10 +54,7 @@ public class PlanningJdbcAdapter implements PlanningUnitRepositoryPort, Planning
                 JOIN "PROFESORES" pr ON pr."ID" = cd."PROFESOR_ID"
                 JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID" AND a."ACTIVA" = TRUE
                 JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID" AND c."ACTIVO" = TRUE
-                WHERE (
-                    cu.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                    OR pr."PERSONA_ID" = cu.persona_id
-                )
+                WHERE 1 = 1
                 ORDER BY school_year DESC, course_name, subject_name
                 """, (rs, rowNum) -> new PlanningUnitCatalogAssignment(
                 rs.getLong("load_id"),
@@ -250,10 +247,7 @@ public class PlanningJdbcAdapter implements PlanningUnitRepositoryPort, Planning
                 JOIN "PROFESORES" pr ON pr."ID" = cd."PROFESOR_ID"
                 JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID"
                 JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID"
-                WHERE (
-                    cu.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                    OR pr."PERSONA_ID" = cu.persona_id
-                )
+                WHERE 1 = 1
                 ORDER BY up."FECHA_CREACION" DESC, up."ID" DESC
                 """, (rs, rowNum) -> new PlanningUnitSummary(
                 rs.getLong("ID"),
@@ -340,10 +334,7 @@ public class PlanningJdbcAdapter implements PlanningUnitRepositoryPort, Planning
                 JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID"
                 JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID"
                 JOIN "USUARIOS" creator ON creator."ID" = up."CREADO_POR_USUARIO_ID"
-                WHERE (
-                    cu.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                    OR pr."PERSONA_ID" = cu.persona_id
-                )
+                WHERE 1 = 1
                 """, this::mapPlanningUnit, username, unitId).stream().findFirst();
     }
 

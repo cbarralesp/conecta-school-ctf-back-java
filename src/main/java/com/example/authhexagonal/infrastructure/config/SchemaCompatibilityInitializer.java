@@ -44,6 +44,9 @@ public class SchemaCompatibilityInitializer {
         ensureAttendanceRegisterSuspensionMetadata();
         ensureSpecialActivityTypes();
         ensureEnrollmentExtendedContacts();
+        ensureEnrollmentDocumentStorageMetadata();
+        ensureStudentLifeInterviewsSchema();
+        ensureStudentLifeRecordsSchema();
     }
 
     private void ensureTeacherStaffType() {
@@ -359,6 +362,75 @@ public class SchemaCompatibilityInitializer {
                     "ESCOLARIDAD" character varying(120),
                     "ACTIVO" boolean DEFAULT TRUE NOT NULL
                 )
+                """);
+    }
+
+    private void ensureStudentLifeInterviewsSchema() {
+        LOGGER.info("Verificando compatibilidad minima de esquema para entrevistas de hoja de vida");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS "HOJA_VIDA_ENTREVISTAS" (
+                    "ID" BIGSERIAL PRIMARY KEY,
+                    "ALUMNO_ID" BIGINT NOT NULL REFERENCES "ALUMNOS" ("ID"),
+                    "MATRICULA_ID" BIGINT REFERENCES "MATRICULAS" ("ID"),
+                    "FECHA" DATE NOT NULL,
+                    "HORA" TIME WITHOUT TIME ZONE,
+                    "TIPO" character varying(30) NOT NULL,
+                    "PARTICIPANTES" TEXT,
+                    "MOTIVO" character varying(500) NOT NULL,
+                    "RESPONSABLE" character varying(180),
+                    "ROL_RESPONSABLE" character varying(120),
+                    "ESTADO" character varying(30) NOT NULL DEFAULT 'Realizada',
+                    "SINTESIS" TEXT,
+                    "ACUERDOS" TEXT,
+                    "ACTIVA" BOOLEAN NOT NULL DEFAULT TRUE,
+                    "CREADO_EN" TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    "ACTUALIZADO_EN" TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+
+        jdbcTemplate.execute("""
+                CREATE INDEX IF NOT EXISTS "IDX_HOJA_VIDA_ENTREVISTAS_ALUMNO"
+                ON "HOJA_VIDA_ENTREVISTAS" ("ALUMNO_ID", "FECHA" DESC)
+                """);
+
+        jdbcTemplate.execute("""
+                CREATE INDEX IF NOT EXISTS "IDX_HOJA_VIDA_ENTREVISTAS_MATRICULA"
+                ON "HOJA_VIDA_ENTREVISTAS" ("MATRICULA_ID")
+                """);
+    }
+
+    private void ensureStudentLifeRecordsSchema() {
+        LOGGER.info("Verificando compatibilidad minima de esquema para convivencia de hoja de vida");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS "HOJA_VIDA_CONVIVENCIA" (
+                    "ID" BIGSERIAL PRIMARY KEY,
+                    "ALUMNO_ID" BIGINT NOT NULL REFERENCES "ALUMNOS" ("ID"),
+                    "MATRICULA_ID" BIGINT REFERENCES "MATRICULAS" ("ID"),
+                    "FECHA" DATE NOT NULL,
+                    "HORA" TIME WITHOUT TIME ZONE,
+                    "TIPO" character varying(30) NOT NULL,
+                    "CATEGORIA" character varying(180) NOT NULL,
+                    "AREA" character varying(180),
+                    "RESPONSABLE" character varying(180),
+                    "ESTADO" character varying(60),
+                    "PLAZO" character varying(120),
+                    "DESCRIPCION" TEXT,
+                    "ACTIVA" BOOLEAN NOT NULL DEFAULT TRUE,
+                    "CREADO_EN" TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    "ACTUALIZADO_EN" TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+
+        jdbcTemplate.execute("""
+                CREATE INDEX IF NOT EXISTS "IDX_HOJA_VIDA_CONVIVENCIA_ALUMNO"
+                ON "HOJA_VIDA_CONVIVENCIA" ("ALUMNO_ID", "FECHA" DESC)
+                """);
+
+        jdbcTemplate.execute("""
+                CREATE INDEX IF NOT EXISTS "IDX_HOJA_VIDA_CONVIVENCIA_MATRICULA"
+                ON "HOJA_VIDA_CONVIVENCIA" ("MATRICULA_ID")
                 """);
     }
 
@@ -996,6 +1068,62 @@ public class SchemaCompatibilityInitializer {
                     "COLOR_TEXTO" = EXCLUDED."COLOR_TEXTO",
                     "ICONO" = EXCLUDED."ICONO",
                     "ACTIVO" = TRUE
+                """);
+    }
+
+    private void ensureEnrollmentDocumentStorageMetadata() {
+        LOGGER.info("Verificando compatibilidad minima de esquema para documentos de matricula");
+
+        jdbcTemplate.execute("""
+                ALTER TABLE "MATRICULA_DOCUMENTOS"
+                    ADD COLUMN IF NOT EXISTS "STORAGE_PROVIDER" VARCHAR(20) NOT NULL DEFAULT 'local',
+                    ADD COLUMN IF NOT EXISTS "STORAGE_KEY" VARCHAR(500),
+                    ADD COLUMN IF NOT EXISTS "NOMBRE_ORIGINAL" VARCHAR(255),
+                    ADD COLUMN IF NOT EXISTS "NOMBRE_INTERNO" VARCHAR(255),
+                    ADD COLUMN IF NOT EXISTS "MIME_TYPE" VARCHAR(150),
+                    ADD COLUMN IF NOT EXISTS "SIZE_BYTES" BIGINT,
+                    ADD COLUMN IF NOT EXISTS "FILE_PATH" VARCHAR(700)
+                """);
+
+        jdbcTemplate.execute("""
+                UPDATE "MATRICULA_DOCUMENTOS"
+                SET "NOMBRE_ORIGINAL" = COALESCE(NULLIF("NOMBRE_ORIGINAL", ''), "NOMBRE_ARCHIVO")
+                WHERE "NOMBRE_ARCHIVO" IS NOT NULL
+                """);
+
+        normalizeEnrollmentDocumentCatalog();
+    }
+
+    private void normalizeEnrollmentDocumentCatalog() {
+        jdbcTemplate.execute("""
+                UPDATE "MATRICULA_DOCUMENTOS" old_docs
+                SET "DOCUMENTO_CLAVE" = 'image-consent'
+                WHERE old_docs."DOCUMENTO_CLAVE" = 'image-permission'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM "MATRICULA_DOCUMENTOS" new_docs
+                      WHERE new_docs."MATRICULA_ID" = old_docs."MATRICULA_ID"
+                        AND new_docs."DOCUMENTO_CLAVE" = 'image-consent'
+                  )
+                """);
+
+        jdbcTemplate.execute("""
+                WITH legacy_other_candidate AS (
+                    SELECT MIN(old_docs."ID") AS "ID"
+                    FROM "MATRICULA_DOCUMENTOS" old_docs
+                    WHERE old_docs."DOCUMENTO_CLAVE" IN ('junaeb-sep', 'migratory-docs', 'priority-certificate')
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM "MATRICULA_DOCUMENTOS" new_docs
+                          WHERE new_docs."MATRICULA_ID" = old_docs."MATRICULA_ID"
+                            AND new_docs."DOCUMENTO_CLAVE" = 'other'
+                      )
+                    GROUP BY old_docs."MATRICULA_ID"
+                )
+                UPDATE "MATRICULA_DOCUMENTOS" old_docs
+                SET "DOCUMENTO_CLAVE" = 'other'
+                FROM legacy_other_candidate candidate
+                WHERE old_docs."ID" = candidate."ID"
                 """);
     }
 

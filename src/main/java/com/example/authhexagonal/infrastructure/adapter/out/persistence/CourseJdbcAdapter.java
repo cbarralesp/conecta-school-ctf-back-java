@@ -725,10 +725,10 @@ public class CourseJdbcAdapter implements ManageCoursesPort, LoadCourseScheduleP
                 LEFT JOIN "CHILE_COMUNAS" cc
                   ON cc."ID" = a."COMUNA_ID"
                 WHERE a."ACTIVO" = TRUE
-                  AND a."ID" NOT IN (
-                      SELECT "ALUMNO_ID"
-                      FROM "MATRICULAS"
-                      WHERE "ACTIVA" = TRUE
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM "MATRICULAS" m
+                      WHERE m."ALUMNO_ID" = a."ID"
                   )
                 ORDER BY a."NOMBRE", a."APELLIDOS"
                 """, (rs, rowNum) -> mapStudent(rs.getLong("ID"),
@@ -765,10 +765,10 @@ public class CourseJdbcAdapter implements ManageCoursesPort, LoadCourseScheduleP
                   ON cc."ID" = a."COMUNA_ID"
                 WHERE a."ID" = ?
                   AND a."ACTIVO" = TRUE
-                  AND a."ID" NOT IN (
-                      SELECT "ALUMNO_ID"
-                      FROM "MATRICULAS"
-                      WHERE "ACTIVA" = TRUE
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM "MATRICULAS" m
+                      WHERE m."ALUMNO_ID" = a."ID"
                   )
                 """, (rs, rowNum) -> mapStudent(rs.getLong("ID"),
                 rs.getString("RUN"),
@@ -1088,6 +1088,7 @@ public class CourseJdbcAdapter implements ManageCoursesPort, LoadCourseScheduleP
                     .orElse(null);
 
             if (transferableLoadId == null) {
+                syncSequence("CARGAS_DOCENTES", "ID");
                 jdbcTemplate.update("""
                         INSERT INTO "CARGAS_DOCENTES" (
                             "PROFESOR_ID",
@@ -1123,6 +1124,16 @@ public class CourseJdbcAdapter implements ManageCoursesPort, LoadCourseScheduleP
                     transferableLoadId
             );
         }
+    }
+
+    private void syncSequence(String tableName, String columnName) {
+        jdbcTemplate.execute("""
+                SELECT setval(
+                    pg_get_serial_sequence('"%s"', '%s'),
+                    COALESCE((SELECT MAX("%s") FROM "%s"), 0) + 1,
+                    false
+                )
+                """.formatted(tableName, columnName, columnName, tableName));
     }
 
     private boolean tableExists(String tableName) {

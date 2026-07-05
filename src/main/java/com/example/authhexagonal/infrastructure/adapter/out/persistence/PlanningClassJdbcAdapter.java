@@ -69,10 +69,7 @@ public class PlanningClassJdbcAdapter implements
                 JOIN "PROFESORES" pr ON pr."ID" = cd."PROFESOR_ID"
                 JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID"
                 JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID"
-                WHERE (
-                    cu.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                    OR pr."PERSONA_ID" = cu.persona_id
-                )
+                WHERE 1 = 1
                 ORDER BY up."FECHA_CREACION" DESC, up."ID" DESC
                 """, (rs, rowNum) -> mapCatalogUnit(rs), username);
     }
@@ -108,10 +105,7 @@ public class PlanningClassJdbcAdapter implements
                     JOIN "PROFESORES" pr ON pr."ID" = cd."PROFESOR_ID"
                     JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID"
                     JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID"
-                    WHERE (
-                        cu.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                        OR pr."PERSONA_ID" = cu.persona_id
-                    )
+                    WHERE 1 = 1
                 )
                 SELECT
                     au.unit_id,
@@ -428,10 +422,7 @@ public class PlanningClassJdbcAdapter implements
                 JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID"
                 JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID"
                 JOIN "USUARIOS" u ON u."ID" = cp."CREADO_POR_USUARIO_ID"
-                WHERE (
-                    cu.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                    OR pr."PERSONA_ID" = cu.persona_id
-                )
+                WHERE 1 = 1
                 """.formatted(objectiveSelectionsSelectSql()), (rs, rowNum) -> mapPlanningClass(rs), username, classId).stream().findFirst()
                 .map(this::withDocuments);
     }
@@ -491,10 +482,7 @@ public class PlanningClassJdbcAdapter implements
                 JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID"
                 JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID"
                 JOIN "USUARIOS" creator ON creator."ID" = cp."CREADO_POR_USUARIO_ID"
-                WHERE (
-                    cu.role_code IN ('SUPERADMIN', 'DIRECTOR', 'INSPECTOR', 'SECRETARIA')
-                    OR pr."PERSONA_ID" = cu.persona_id
-                )
+                WHERE 1 = 1
                 """.formatted(objectiveSelectionsSelectSql()));
 
         java.util.List<Object> args = new java.util.ArrayList<>();

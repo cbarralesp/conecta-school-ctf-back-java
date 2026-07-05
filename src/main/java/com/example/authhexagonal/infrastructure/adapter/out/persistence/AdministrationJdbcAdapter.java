@@ -56,7 +56,6 @@ public class AdministrationJdbcAdapter implements ManageAdministrationPort, Regi
             "ACTIVIDADES",
             "CONTENIDO",
             "PLANIFICACIONES",
-            "PLANIFICACION",
             "USUARIOS",
             "ROLES",
             "MATRIZ_ACCESO",
@@ -74,7 +73,6 @@ public class AdministrationJdbcAdapter implements ManageAdministrationPort, Regi
             Map.entry("ACTIVIDADES", "Actividades"),
             Map.entry("CONTENIDO", "Contenido"),
             Map.entry("PLANIFICACIONES", "Planificaciones"),
-            Map.entry("PLANIFICACION", "Planificación"),
             Map.entry("USUARIOS", "Usuarios"),
             Map.entry("ROLES", "Roles"),
             Map.entry("MATRIZ_ACCESO", "Matriz de acceso"),
@@ -1239,6 +1237,7 @@ public class AdministrationJdbcAdapter implements ManageAdministrationPort, Regi
         return switch (normalized) {
             case "EVALUACIONES" -> "CALIFICACIONES";
             case "DOCENTES" -> "PROFESORES";
+            case "PLANIFICACION" -> "PLANIFICACIONES";
             case "MATRIZ_DE_ACCESO" -> "MATRIZ_ACCESO";
             default -> normalized;
         };

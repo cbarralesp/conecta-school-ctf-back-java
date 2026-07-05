@@ -12,6 +12,7 @@ import com.example.authhexagonal.domain.model.EnrollmentPickupContact;
 import com.example.authhexagonal.domain.model.EnrollmentStudentAccess;
 import com.example.authhexagonal.domain.model.EnrollmentSummary;
 import com.example.authhexagonal.domain.port.out.ManageEnrollmentsPort;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -866,6 +867,7 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
 
     @Override
     public void replaceDocuments(Long enrollmentId, List<EnrollmentDocument> documents) {
+        List<EnrollmentDocument> existingDocuments = findDocumentsByEnrollmentId(enrollmentId);
         jdbcTemplate.update("""
                 DELETE FROM "MATRICULA_DOCUMENTOS"
                 WHERE "MATRICULA_ID" = ?
@@ -875,24 +877,111 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
         }
 
         for (EnrollmentDocument document : documents) {
+            EnrollmentDocument existingDocument = existingDocuments.stream()
+                    .filter(item -> item.documentKey().equals(document.documentKey()))
+                    .findFirst()
+                    .orElse(null);
             jdbcTemplate.update("""
                     INSERT INTO "MATRICULA_DOCUMENTOS" (
                         "MATRICULA_ID",
                         "DOCUMENTO_CLAVE",
                         "NOMBRE_ARCHIVO",
+                        "STORAGE_PROVIDER",
+                        "STORAGE_KEY",
+                        "NOMBRE_ORIGINAL",
+                        "NOMBRE_INTERNO",
+                        "MIME_TYPE",
+                        "SIZE_BYTES",
+                        "FILE_PATH",
                         "DRIVE_FILE_ID",
                         "DRIVE_URL",
                         "ACTIVO"
                     )
-                    VALUES (?, ?, ?, ?, ?, TRUE)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)
                     """,
                     enrollmentId,
                     document.documentKey(),
                     document.fileName(),
+                    resolveStorageProvider(existingDocument == null ? document.storageProvider() : existingDocument.storageProvider()),
+                    existingDocument == null ? document.storageKey() : existingDocument.storageKey(),
+                    document.fileName(),
+                    existingDocument == null ? null : extractStoredName(existingDocument.filePath()),
+                    existingDocument == null ? document.mimeType() : existingDocument.mimeType(),
+                    existingDocument == null ? document.sizeBytes() : existingDocument.sizeBytes(),
+                    existingDocument == null ? document.filePath() : existingDocument.filePath(),
+                    existingDocument == null ? document.driveFileId() : existingDocument.driveFileId(),
+                    existingDocument == null ? document.driveUrl() : existingDocument.driveUrl()
+            );
+        }
+    }
+
+    @Override
+    public EnrollmentDocument upsertDocument(Long enrollmentId, EnrollmentDocument document) {
+        Optional<EnrollmentDocument> existingDocument = findDocumentByEnrollmentIdAndKey(enrollmentId, document.documentKey());
+        if (existingDocument.isPresent()) {
+            jdbcTemplate.update("""
+                    UPDATE "MATRICULA_DOCUMENTOS"
+                    SET "NOMBRE_ARCHIVO" = ?,
+                        "STORAGE_PROVIDER" = ?,
+                        "STORAGE_KEY" = ?,
+                        "NOMBRE_ORIGINAL" = ?,
+                        "NOMBRE_INTERNO" = ?,
+                        "MIME_TYPE" = ?,
+                        "SIZE_BYTES" = ?,
+                        "FILE_PATH" = ?,
+                        "DRIVE_FILE_ID" = ?,
+                        "DRIVE_URL" = ?,
+                        "ACTIVO" = TRUE
+                    WHERE "ID" = ?
+                    """,
+                    document.fileName(),
+                    document.storageProvider(),
+                    document.storageKey(),
+                    document.fileName(),
+                    extractStoredName(document.filePath()),
+                    document.mimeType(),
+                    document.sizeBytes(),
+                    document.filePath(),
+                    document.driveFileId(),
+                    document.driveUrl(),
+                    existingDocument.get().id()
+            );
+        } else {
+            jdbcTemplate.update("""
+                    INSERT INTO "MATRICULA_DOCUMENTOS" (
+                        "MATRICULA_ID",
+                        "DOCUMENTO_CLAVE",
+                        "NOMBRE_ARCHIVO",
+                        "STORAGE_PROVIDER",
+                        "STORAGE_KEY",
+                        "NOMBRE_ORIGINAL",
+                        "NOMBRE_INTERNO",
+                        "MIME_TYPE",
+                        "SIZE_BYTES",
+                        "FILE_PATH",
+                        "DRIVE_FILE_ID",
+                        "DRIVE_URL",
+                        "ACTIVO"
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)
+                    """,
+                    enrollmentId,
+                    document.documentKey(),
+                    document.fileName(),
+                    resolveStorageProvider(document.storageProvider()),
+                    document.storageKey(),
+                    document.fileName(),
+                    extractStoredName(document.filePath()),
+                    document.mimeType(),
+                    document.sizeBytes(),
+                    document.filePath(),
                     document.driveFileId(),
                     document.driveUrl()
             );
         }
+
+        return findDocumentByEnrollmentIdAndKey(enrollmentId, document.documentKey())
+                .orElseThrow();
     }
 
     @Override
@@ -1026,20 +1115,119 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
     }
 
     private List<EnrollmentDocument> findDocumentsByEnrollmentId(Long enrollmentId) {
+        try {
+            return jdbcTemplate.query("""
+                    SELECT "ID",
+                           "DOCUMENTO_CLAVE",
+                           "NOMBRE_ARCHIVO",
+                           COALESCE("STORAGE_PROVIDER", '') AS "STORAGE_PROVIDER",
+                           COALESCE("STORAGE_KEY", '') AS "STORAGE_KEY",
+                           COALESCE("DRIVE_FILE_ID", '') AS "DRIVE_FILE_ID",
+                           COALESCE("DRIVE_URL", '') AS "DRIVE_URL",
+                           COALESCE("MIME_TYPE", '') AS "MIME_TYPE",
+                           "SIZE_BYTES",
+                           COALESCE("FILE_PATH", '') AS "FILE_PATH"
+                    FROM "MATRICULA_DOCUMENTOS"
+                    WHERE "MATRICULA_ID" = ?
+                      AND "ACTIVO" = TRUE
+                    ORDER BY "ID"
+                    """, (rs, rowNum) -> mapEnrollmentDocument(rs), enrollmentId);
+        } catch (BadSqlGrammarException exception) {
+            return findLegacyDocumentsByEnrollmentId(enrollmentId);
+        }
+    }
+
+    private Optional<EnrollmentDocument> findDocumentByEnrollmentIdAndKey(Long enrollmentId, String documentKey) {
+        try {
+            return jdbcTemplate.query("""
+                    SELECT "ID",
+                           "DOCUMENTO_CLAVE",
+                           "NOMBRE_ARCHIVO",
+                           COALESCE("STORAGE_PROVIDER", '') AS "STORAGE_PROVIDER",
+                           COALESCE("STORAGE_KEY", '') AS "STORAGE_KEY",
+                           COALESCE("DRIVE_FILE_ID", '') AS "DRIVE_FILE_ID",
+                           COALESCE("DRIVE_URL", '') AS "DRIVE_URL",
+                           COALESCE("MIME_TYPE", '') AS "MIME_TYPE",
+                           "SIZE_BYTES",
+                           COALESCE("FILE_PATH", '') AS "FILE_PATH"
+                    FROM "MATRICULA_DOCUMENTOS"
+                    WHERE "MATRICULA_ID" = ?
+                      AND "DOCUMENTO_CLAVE" = ?
+                    ORDER BY "ID" DESC
+                    LIMIT 1
+                    """, (rs, rowNum) -> mapEnrollmentDocument(rs), enrollmentId, documentKey).stream().findFirst();
+        } catch (BadSqlGrammarException exception) {
+            return findLegacyDocumentByEnrollmentIdAndKey(enrollmentId, documentKey);
+        }
+    }
+
+    private List<EnrollmentDocument> findLegacyDocumentsByEnrollmentId(Long enrollmentId) {
         return jdbcTemplate.query("""
-                SELECT "ID", "DOCUMENTO_CLAVE", "NOMBRE_ARCHIVO", COALESCE("DRIVE_FILE_ID", '') AS "DRIVE_FILE_ID",
+                SELECT "ID", "DOCUMENTO_CLAVE", "NOMBRE_ARCHIVO",
+                       COALESCE("DRIVE_FILE_ID", '') AS "DRIVE_FILE_ID",
                        COALESCE("DRIVE_URL", '') AS "DRIVE_URL"
                 FROM "MATRICULA_DOCUMENTOS"
                 WHERE "MATRICULA_ID" = ?
                   AND "ACTIVO" = TRUE
                 ORDER BY "ID"
-                """, (rs, rowNum) -> new EnrollmentDocument(
+                """, (rs, rowNum) -> mapLegacyEnrollmentDocument(rs), enrollmentId);
+    }
+
+    private Optional<EnrollmentDocument> findLegacyDocumentByEnrollmentIdAndKey(Long enrollmentId, String documentKey) {
+        return jdbcTemplate.query("""
+                SELECT "ID", "DOCUMENTO_CLAVE", "NOMBRE_ARCHIVO",
+                       COALESCE("DRIVE_FILE_ID", '') AS "DRIVE_FILE_ID",
+                       COALESCE("DRIVE_URL", '') AS "DRIVE_URL"
+                FROM "MATRICULA_DOCUMENTOS"
+                WHERE "MATRICULA_ID" = ?
+                  AND "DOCUMENTO_CLAVE" = ?
+                ORDER BY "ID" DESC
+                LIMIT 1
+                """, (rs, rowNum) -> mapLegacyEnrollmentDocument(rs), enrollmentId, documentKey).stream().findFirst();
+    }
+
+    private EnrollmentDocument mapEnrollmentDocument(ResultSet rs) throws SQLException {
+        long sizeValue = rs.getLong("SIZE_BYTES");
+        Long sizeBytes = rs.wasNull() ? null : sizeValue;
+        return new EnrollmentDocument(
                 rs.getLong("ID"),
                 rs.getString("DOCUMENTO_CLAVE"),
                 rs.getString("NOMBRE_ARCHIVO"),
+                rs.getString("STORAGE_PROVIDER"),
+                rs.getString("STORAGE_KEY"),
                 rs.getString("DRIVE_FILE_ID"),
-                rs.getString("DRIVE_URL")
-        ), enrollmentId);
+                rs.getString("DRIVE_URL"),
+                rs.getString("MIME_TYPE"),
+                sizeBytes,
+                rs.getString("FILE_PATH")
+        );
+    }
+
+    private EnrollmentDocument mapLegacyEnrollmentDocument(ResultSet rs) throws SQLException {
+        return new EnrollmentDocument(
+                rs.getLong("ID"),
+                rs.getString("DOCUMENTO_CLAVE"),
+                rs.getString("NOMBRE_ARCHIVO"),
+                "",
+                "",
+                rs.getString("DRIVE_FILE_ID"),
+                rs.getString("DRIVE_URL"),
+                "",
+                null,
+                ""
+        );
+    }
+
+    private String extractStoredName(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return null;
+        }
+        int separatorIndex = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+        return separatorIndex >= 0 ? filePath.substring(separatorIndex + 1) : filePath;
+    }
+
+    private String resolveStorageProvider(String storageProvider) {
+        return storageProvider == null || storageProvider.isBlank() ? "local" : storageProvider;
     }
 
     private EnrollmentEstablishment mapEstablishment(ResultSet rs) throws SQLException {
