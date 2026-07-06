@@ -37,7 +37,11 @@ public class AttendanceJdbcAdapter implements ManageAttendancePort {
         return jdbcTemplate.query("""
                 SELECT
                     c."ID",
-                    c."NOMBRE" || CASE WHEN COALESCE(c."LETRA", '') <> '' THEN ' ' || c."LETRA" ELSE '' END AS "NOMBRE",
+                    CASE
+                        WHEN COALESCE(BTRIM(c."LETRA"), '') = '' THEN c."NOMBRE"
+                        WHEN RIGHT(BTRIM(c."NOMBRE"), LENGTH(BTRIM(c."LETRA"))) = BTRIM(c."LETRA") THEN c."NOMBRE"
+                        ELSE c."NOMBRE" || ' ' || c."LETRA"
+                    END AS "NOMBRE",
                     c."ANIO_ESCOLAR"
                 FROM "CURSOS" c
                 WHERE c."ACTIVO" = TRUE
@@ -62,7 +66,11 @@ public class AttendanceJdbcAdapter implements ManageAttendancePort {
         return jdbcTemplate.query("""
                 SELECT
                     "ID",
-                    "NOMBRE" || CASE WHEN COALESCE("LETRA", '') <> '' THEN ' ' || "LETRA" ELSE '' END AS "NOMBRE",
+                    CASE
+                        WHEN COALESCE(BTRIM("LETRA"), '') = '' THEN "NOMBRE"
+                        WHEN RIGHT(BTRIM("NOMBRE"), LENGTH(BTRIM("LETRA"))) = BTRIM("LETRA") THEN "NOMBRE"
+                        ELSE "NOMBRE" || ' ' || "LETRA"
+                    END AS "NOMBRE",
                     "ANIO_ESCOLAR"
                 FROM "CURSOS"
                 WHERE "ID" = ?

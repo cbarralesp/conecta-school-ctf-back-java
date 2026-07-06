@@ -980,17 +980,24 @@ public class AdministrationJdbcAdapter implements ManageAdministrationPort, Regi
     }
 
     public Optional<String> findEffectiveRoleCodeByUsername(String username) {
+        String resolvedStaffType = "UPPER(COALESCE(NULLIF(TRIM(prof.\"TIPO_PERSONAL\"), ''), 'DOCENTE'))";
         return jdbcTemplate.query("""
-                SELECT r."CODIGO"
+                SELECT CASE
+                    WHEN UPPER(r."CODIGO") = 'SECRETARIA' AND %s = 'ASISTENTE' THEN 'ASISTENTE'
+                    ELSE r."CODIGO"
+                END AS "CODIGO"
                 FROM "USUARIOS" u
                 LEFT JOIN "ADMIN_USER_SETTINGS" aus ON aus."USUARIO_ID" = u."ID"
                 LEFT JOIN "ADMIN_ROLES" r ON r."ID" = aus."ROL_ID"
+                LEFT JOIN "PERSONAS" p ON p."ID" = u."PERSONA_ID"
+                LEFT JOIN "PROFESORES" prof ON prof."PERSONA_ID" = p."ID"
                 WHERE UPPER(u."USUARIO") = UPPER(?)
-                """, (rs, rowNum) -> rs.getString("CODIGO"), username).stream().findFirst();
+                """.formatted(resolvedStaffType), (rs, rowNum) -> rs.getString("CODIGO"), username).stream().findFirst();
     }
 
     public Optional<AuthenticatedAdminUser> findAuthenticationUser(String username) {
         String normalizedIdentifier = normalizeRunIdentifier(username);
+        String resolvedStaffType = "UPPER(COALESCE(NULLIF(TRIM(prof.\"TIPO_PERSONAL\"), ''), 'DOCENTE'))";
         List<AuthenticatedAdminUser> users = jdbcTemplate.query("""
                 SELECT
                     u."ID" AS user_id,
@@ -999,16 +1006,23 @@ public class AdministrationJdbcAdapter implements ManageAdministrationPort, Regi
                     u."ACTIVO",
                     COALESCE(p."CORREO_ELECTRONICO", '') AS email,
                     TRIM(COALESCE(p."NOMBRES", '') || ' ' || COALESCE(p."APELLIDOS", '')) AS display_name,
-                    COALESCE(r."CODIGO", 'PROFESOR') AS role_code,
+                    COALESCE(
+                        CASE
+                            WHEN UPPER(r."CODIGO") = 'SECRETARIA' AND %s = 'ASISTENTE' THEN 'ASISTENTE'
+                            ELSE r."CODIGO"
+                        END,
+                        'PROFESOR'
+                    ) AS role_code,
                     COALESCE(aus."ESTADO", CASE WHEN u."ACTIVO" THEN 'Activo' ELSE 'Inactivo' END) AS estado
                 FROM "USUARIOS" u
                 JOIN "PERSONAS" p ON p."ID" = u."PERSONA_ID"
                 LEFT JOIN "ADMIN_USER_SETTINGS" aus ON aus."USUARIO_ID" = u."ID"
                 LEFT JOIN "ADMIN_ROLES" r ON r."ID" = aus."ROL_ID"
+                LEFT JOIN "PROFESORES" prof ON prof."PERSONA_ID" = p."ID"
                 WHERE UPPER(u."USUARIO") = UPPER(?)
                    OR UPPER(COALESCE(p."CORREO_ELECTRONICO", '')) = UPPER(?)
                    OR REGEXP_REPLACE(UPPER(COALESCE(p."RUN", '')), '[^0-9K]', '', 'g') = ?
-                """, (rs, rowNum) -> new AuthenticatedAdminUser(
+                """.formatted(resolvedStaffType), (rs, rowNum) -> new AuthenticatedAdminUser(
                 rs.getLong("user_id"),
                 rs.getString("USUARIO"),
                 rs.getString("email"),

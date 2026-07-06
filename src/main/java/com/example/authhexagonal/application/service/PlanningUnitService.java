@@ -115,6 +115,7 @@ public class PlanningUnitService implements
                 planningUnit.id(),
                 command.unitNumber().trim(),
                 command.name().trim(),
+                resolveUnitColorHex(command.colorHex()),
                 startWeek,
                 command.startDate(),
                 command.endDate(),
@@ -161,6 +162,7 @@ public class PlanningUnitService implements
                 assignment.loadId(),
                 command.unitNumber(),
                 command.name().trim(),
+                resolveUnitColorHex(command.colorHex()),
                 startWeek,
                 command.startDate(),
                 command.endDate(),
@@ -202,6 +204,9 @@ public class PlanningUnitService implements
         if (command.plannedClasses() != null && command.plannedClasses() < 0) {
             throw new IllegalArgumentException("Las clases planificadas no pueden ser negativas");
         }
+        if (command.colorHex() != null && !command.colorHex().matches("^#[0-9A-Fa-f]{6}$")) {
+            throw new IllegalArgumentException("El color de la unidad no es valido");
+        }
 
     }
 
@@ -229,5 +234,11 @@ public class PlanningUnitService implements
             return normalized;
         }
         return MANUAL_UNIT_INDICATORS_TEMPLATE.formatted(command.name().trim());
+    }
+
+    private String resolveUnitColorHex(String colorHex) {
+        return colorHex != null && colorHex.matches("^#[0-9A-Fa-f]{6}$")
+                ? colorHex
+                : "#6d28d9";
     }
 }

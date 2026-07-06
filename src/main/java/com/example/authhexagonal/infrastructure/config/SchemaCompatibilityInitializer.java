@@ -42,6 +42,7 @@ public class SchemaCompatibilityInitializer {
         ensureCourseEnrollmentConsistency();
         ensureActivityCourseScope();
         ensureAttendanceRegisterSuspensionMetadata();
+        ensurePlanningUnitColors();
         ensureSpecialActivityTypes();
         ensureEnrollmentExtendedContacts();
         ensureEnrollmentDocumentStorageMetadata();
@@ -67,6 +68,24 @@ public class SchemaCompatibilityInitializer {
         jdbcTemplate.execute("""
                 ALTER TABLE "CARGAS_DOCENTES"
                 ADD COLUMN IF NOT EXISTS "PERIODO_ID" BIGINT
+                """);
+
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'UK_CARGAS_DOCENTES'
+                    ) THEN
+                        ALTER TABLE "CARGAS_DOCENTES"
+                        DROP CONSTRAINT "UK_CARGAS_DOCENTES";
+                    END IF;
+                END $$;
+                """);
+
+        jdbcTemplate.execute("""
+                DROP INDEX IF EXISTS "UK_CARGAS_DOCENTES"
                 """);
 
         jdbcTemplate.execute("""
@@ -107,6 +126,17 @@ public class SchemaCompatibilityInitializer {
                         FOREIGN KEY ("PERIODO_ID") REFERENCES "PERIODOS_ACADEMICOS" ("ID");
                     END IF;
                 END $$;
+                """);
+
+        jdbcTemplate.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS "UK_CARGAS_DOCENTES_PERIODO"
+                ON "CARGAS_DOCENTES" (
+                    "PROFESOR_ID",
+                    "CURSO_ID",
+                    "ASIGNATURA_ID",
+                    "ANIO_ESCOLAR",
+                    COALESCE("PERIODO_ID", 0)
+                )
                 """);
     }
 
@@ -249,6 +279,40 @@ public class SchemaCompatibilityInitializer {
         jdbcTemplate.execute("""
                 ALTER TABLE "EVALUACIONES"
                 ALTER COLUMN "CREADO_EN" SET DEFAULT CURRENT_TIMESTAMP
+                """);
+    }
+
+    private void ensurePlanningUnitColors() {
+        jdbcTemplate.execute("""
+                ALTER TABLE "UNIDADES_PLANIFICACION"
+                ADD COLUMN IF NOT EXISTS "COLOR_HEX" character varying(7)
+                """);
+
+        jdbcTemplate.execute("""
+                WITH ordered_units AS (
+                    SELECT
+                        up."ID",
+                        ROW_NUMBER() OVER (
+                            PARTITION BY up."CARGA_DOCENTE_ID"
+                            ORDER BY COALESCE(up."FECHA_CREACION", CURRENT_TIMESTAMP), up."ID"
+                        ) AS color_order
+                    FROM "UNIDADES_PLANIFICACION" up
+                    WHERE up."COLOR_HEX" IS NULL OR TRIM(up."COLOR_HEX") = ''
+                )
+                UPDATE "UNIDADES_PLANIFICACION" up
+                SET "COLOR_HEX" = CASE MOD(ordered_units.color_order - 1, 9)
+                    WHEN 0 THEN '#6d28d9'
+                    WHEN 1 THEN '#10b981'
+                    WHEN 2 THEN '#f59e0b'
+                    WHEN 3 THEN '#3b82f6'
+                    WHEN 4 THEN '#8b5cf6'
+                    WHEN 5 THEN '#f97316'
+                    WHEN 6 THEN '#ef4444'
+                    WHEN 7 THEN '#ec4899'
+                    ELSE '#94a3b8'
+                END
+                FROM ordered_units
+                WHERE ordered_units."ID" = up."ID"
                 """);
     }
 

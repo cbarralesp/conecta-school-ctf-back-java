@@ -1,5 +1,6 @@
 package com.example.authhexagonal.application.service;
 
+import com.example.authhexagonal.application.support.AcademicSemesterResolver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.authhexagonal.domain.exception.ResourceNotFoundException;
@@ -37,6 +38,7 @@ import com.example.authhexagonal.domain.port.out.ManageGradesPort;
 import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -66,9 +68,18 @@ public class GradesService implements ManageGradesUseCase {
 
     @Override
     public GradeCatalog getCatalog() {
+        int currentYear = LocalDate.now().getYear();
+        int preferredSemester = AcademicSemesterResolver.resolveCurrentSemester();
         return new GradeCatalog(
                 manageGradesPort.findCoursesWithGrades(),
-                manageGradesPort.findActivePeriods()
+                manageGradesPort.findActivePeriods().stream()
+                        .sorted(Comparator
+                                .comparing((GradePeriodOption period) -> period.schoolYear() == currentYear ? 0 : 1)
+                                .thenComparing((GradePeriodOption period) ->
+                                        period.schoolYear() == currentYear && period.semester() == preferredSemester ? 0 : 1)
+                                .thenComparing(GradePeriodOption::schoolYear, Comparator.reverseOrder())
+                                .thenComparing(GradePeriodOption::semester))
+                        .toList()
         );
     }
 

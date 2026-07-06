@@ -39,6 +39,10 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
 
     @Override
     public Optional<StudentDashboard> findByUsername(String username) {
+        LocalDate today = LocalDate.now();
+        int currentSchoolYear = today.getYear();
+        int currentSemester = today.getMonthValue() >= 7 ? 2 : 1;
+
         List<Map<String, Object>> studentRows = jdbcTemplate.queryForList("""
                 SELECT
                     a."ID" AS student_id,
@@ -135,6 +139,8 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
                 WHERE cal."ALUMNO_ID" = ?
                   AND cal."ACTIVA" = TRUE
                   AND cal."NOTA" IS NOT NULL
+                  AND p."ANIO" = ?
+                  AND p."SEMESTRE" = ?
                   %s
                 ORDER BY COALESCE(cal."ACTUALIZADO_EN", cal."CREADO_EN") DESC, e."ORDEN" DESC
                 LIMIT 6
@@ -144,9 +150,9 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
                 rs.getDouble("score"),
                 rs.getString("period_name"),
                 formatTimestamp(rs.getTimestamp("recorded_at"))
-        ), studentId);
+        ), studentId, currentSchoolYear, currentSemester);
 
-        List<StudentSubjectGradeSummary> gradeSummary = buildGradeSummary(studentId);
+        List<StudentSubjectGradeSummary> gradeSummary = buildGradeSummary(studentId, currentSchoolYear, currentSemester);
 
         StudentAttendanceSummary attendanceSummary = jdbcTemplate.query("""
                 SELECT
@@ -214,7 +220,7 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
         ));
     }
 
-    private List<StudentSubjectGradeSummary> buildGradeSummary(Long studentId) {
+    private List<StudentSubjectGradeSummary> buildGradeSummary(Long studentId, int currentSchoolYear, int currentSemester) {
         Long currentCourseId = findCurrentCourseId(studentId);
         if (currentCourseId == null) {
             return List.of();
@@ -238,6 +244,14 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
                   ON e."CURSO_ID" = course_subjects."CURSO_ID"
                  AND e."ASIGNATURA_ID" = course_subjects."ASIGNATURA_ID"
                  AND e."ACTIVA" = TRUE
+                 AND EXISTS (
+                    SELECT 1
+                    FROM "PERIODOS_ACADEMICOS" period_filter
+                    WHERE period_filter."ID" = e."PERIODO_ID"
+                      AND period_filter."ACTIVO" = TRUE
+                      AND period_filter."ANIO" = ?
+                      AND period_filter."SEMESTRE" = ?
+                 )
                 LEFT JOIN "PERIODOS_ACADEMICOS" p
                   ON p."ID" = e."PERIODO_ID"
                  AND p."ACTIVO" = TRUE
@@ -252,7 +266,7 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
                     COALESCE(p."SEMESTRE", 0),
                     COALESCE(e."ORDEN", 0),
                     COALESCE(cal."ACTUALIZADO_EN", cal."CREADO_EN")
-                """.formatted(activeCourseSubjectsSubquery()), studentId, currentCourseId);
+                """.formatted(activeCourseSubjectsSubquery()), currentSchoolYear, currentSemester, studentId, currentCourseId);
 
         Map<String, SubjectGradeSummaryBuilder> builders = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {

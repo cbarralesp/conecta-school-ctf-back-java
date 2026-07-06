@@ -1,5 +1,6 @@
 package com.example.authhexagonal.infrastructure.adapter.in.web;
 
+import com.example.authhexagonal.application.support.AcademicSemesterResolver;
 import com.example.authhexagonal.domain.model.PlanningClassCommand;
 import com.example.authhexagonal.domain.model.PlanningClassObjectiveSelection;
 import com.example.authhexagonal.domain.model.PlanningClassDocumentUploadCommand;
@@ -112,7 +113,7 @@ public class PlanningClassController {
                         authentication.getName(),
                         courseId,
                         subjectId,
-                        semester,
+                        AcademicSemesterResolver.resolveProvidedOrCurrent(semester),
                         month,
                         parseStatus(status),
                         parseDocumentType(documentType),
