@@ -42,10 +42,12 @@ public class SchemaCompatibilityInitializer {
         ensureCourseEnrollmentConsistency();
         ensureActivityCourseScope();
         ensureAttendanceRegisterSuspensionMetadata();
+        ensureAttendanceEarlyDepartureMetadata();
         ensurePlanningUnitColors();
         ensureSpecialActivityTypes();
         ensureEnrollmentExtendedContacts();
         ensureEnrollmentDocumentStorageMetadata();
+        ensureStudentProfilePhotoColumns();
         ensureStudentLifeInterviewsSchema();
         ensureStudentLifeRecordsSchema();
     }
@@ -1115,6 +1117,16 @@ public class SchemaCompatibilityInitializer {
                 """);
     }
 
+    private void ensureAttendanceEarlyDepartureMetadata() {
+        jdbcTemplate.execute("""
+                ALTER TABLE "ASISTENCIA_DETALLES"
+                    ADD COLUMN IF NOT EXISTS "HORA_SALIDA" TIME,
+                    ADD COLUMN IF NOT EXISTS "MOTIVO_SALIDA" VARCHAR(40),
+                    ADD COLUMN IF NOT EXISTS "SALIDA_JUSTIFICADA" BOOLEAN,
+                    ADD COLUMN IF NOT EXISTS "OBSERVACION_SALIDA" VARCHAR(255)
+                """);
+    }
+
     private void ensureSpecialActivityTypes() {
         jdbcTemplate.execute("""
                 INSERT INTO "TIPOS_ACTIVIDAD" ("CODIGO", "NOMBRE", "DESCRIPCION", "COLOR_FONDO", "COLOR_TEXTO", "ICONO", "ACTIVO")
@@ -1156,6 +1168,16 @@ public class SchemaCompatibilityInitializer {
                 """);
 
         normalizeEnrollmentDocumentCatalog();
+    }
+
+    private void ensureStudentProfilePhotoColumns() {
+        LOGGER.info("Verificando compatibilidad minima de esquema para foto de perfil de alumnos");
+
+        jdbcTemplate.execute("""
+                ALTER TABLE "ALUMNOS"
+                    ADD COLUMN IF NOT EXISTS "FOTO_PATH" TEXT,
+                    ADD COLUMN IF NOT EXISTS "FOTO_MIME_TYPE" VARCHAR(120)
+                """);
     }
 
     private void normalizeEnrollmentDocumentCatalog() {

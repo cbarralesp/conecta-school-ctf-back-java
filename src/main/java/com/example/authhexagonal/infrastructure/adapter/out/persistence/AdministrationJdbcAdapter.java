@@ -111,14 +111,21 @@ public class AdministrationJdbcAdapter implements ManageAdministrationPort, Regi
     public List<AdministrationRoleOption> findRoleOptions() {
         ensureDefaultRolesPresent();
         return jdbcTemplate.query("""
-                SELECT "CODIGO", "NOMBRE", "DESCRIPCION"
-                FROM "ADMIN_ROLES"
-                WHERE "ACTIVO" = TRUE
-                ORDER BY "ORDEN_VISUAL"
+                SELECT
+                    roles."CODIGO",
+                    roles."NOMBRE",
+                    roles."DESCRIPCION",
+                    COUNT(settings."USUARIO_ID") FILTER (WHERE settings."ESTADO" = 'Activo') AS user_count
+                FROM "ADMIN_ROLES" roles
+                LEFT JOIN "ADMIN_USER_SETTINGS" settings ON settings."ROL_ID" = roles."ID"
+                WHERE roles."ACTIVO" = TRUE
+                GROUP BY roles."ID", roles."CODIGO", roles."NOMBRE", roles."DESCRIPCION", roles."ORDEN_VISUAL"
+                ORDER BY roles."ORDEN_VISUAL"
                 """, (rs, rowNum) -> new AdministrationRoleOption(
                 rs.getString("CODIGO"),
                 rs.getString("NOMBRE"),
-                rs.getString("DESCRIPCION")
+                rs.getString("DESCRIPCION"),
+                rs.getInt("user_count")
         ));
     }
 

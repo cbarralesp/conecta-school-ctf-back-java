@@ -4,6 +4,7 @@ import com.example.authhexagonal.domain.model.EnrollmentDetail;
 import com.example.authhexagonal.domain.model.EnrollmentDocumentDownload;
 import com.example.authhexagonal.domain.model.EnrollmentDocument;
 import com.example.authhexagonal.domain.model.EnrollmentOverview;
+import com.example.authhexagonal.domain.model.StudentPhotoDownload;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentAccessPreviewRequest;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentAccessPreviewResponse;
 import com.example.authhexagonal.infrastructure.adapter.in.web.dto.EnrollmentRenewalRequest;
@@ -26,6 +27,10 @@ public interface ManageEnrollmentsUseCase {
     EnrollmentDocument uploadDocument(Long enrollmentId, String documentKey, String originalName, String mimeType, byte[] content);
 
     EnrollmentDocumentDownload downloadDocument(Long enrollmentId, Long documentId);
+
+    EnrollmentDetail uploadStudentPhoto(Long enrollmentId, String originalName, String mimeType, byte[] content);
+
+    StudentPhotoDownload downloadStudentPhoto(Long enrollmentId);
 
     void delete(Long enrollmentId);
 

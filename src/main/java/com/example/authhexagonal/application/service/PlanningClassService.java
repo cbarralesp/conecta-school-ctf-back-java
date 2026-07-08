@@ -38,6 +38,7 @@ import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -148,6 +149,13 @@ public class PlanningClassService implements
         validateDocument(command);
 
         StoredFileReference storedFile = fileStoragePort.storePlanningClassDocument(
+                command.visibleToStudents() ? "contenido" : "planificaciones",
+                buildSchoolYearFolder(planningClass),
+                buildSemesterFolder(planningClass),
+                planningClass.courseName(),
+                planningClass.subjectName(),
+                buildUnitFolder(planningClass),
+                buildClassFolder(planningClass),
                 command.originalName(),
                 command.mimeType(),
                 command.content()
@@ -619,6 +627,32 @@ public class PlanningClassService implements
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
             throw new IllegalArgumentException("Solo se permiten archivos PDF, DOCX o PPTX");
         }
+    }
+
+    private String buildSchoolYearFolder(PlanningClass planningClass) {
+        LocalDate plannedDate = planningClass.plannedDate();
+        return plannedDate == null ? "sin-anio" : String.valueOf(plannedDate.getYear());
+    }
+
+    private String buildSemesterFolder(PlanningClass planningClass) {
+        LocalDate plannedDate = planningClass.plannedDate();
+        if (plannedDate == null) {
+            return "sin-semestre";
+        }
+        return "semestre-" + (plannedDate.getMonthValue() <= 6 ? 1 : 2);
+    }
+
+    private String buildUnitFolder(PlanningClass planningClass) {
+        String label = planningClass.unitNumberLabel() == null ? "" : planningClass.unitNumberLabel().trim();
+        String name = planningClass.unitName() == null ? "" : planningClass.unitName().trim();
+        String value = (label + " " + name).trim();
+        return value.isBlank() ? "unidad-" + planningClass.unitId() : value;
+    }
+
+    private String buildClassFolder(PlanningClass planningClass) {
+        String title = planningClass.title() == null ? "" : planningClass.title().trim();
+        String prefix = planningClass.id() == null ? "clase" : "clase-" + planningClass.id();
+        return title.isBlank() ? prefix : prefix + " " + title;
     }
 
     private String extractExtension(String originalName) {

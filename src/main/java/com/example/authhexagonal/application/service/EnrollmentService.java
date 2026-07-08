@@ -14,6 +14,7 @@ import com.example.authhexagonal.domain.model.EnrollmentPickupContact;
 import com.example.authhexagonal.domain.model.EnrollmentSummary;
 import com.example.authhexagonal.domain.model.EnrollmentStudentAccess;
 import com.example.authhexagonal.domain.model.StoredFileReference;
+import com.example.authhexagonal.domain.model.StudentPhotoDownload;
 import com.example.authhexagonal.domain.port.in.ManageEnrollmentsUseCase;
 import com.example.authhexagonal.domain.port.out.FileStoragePort;
 import com.example.authhexagonal.domain.port.out.ManageEnrollmentsPort;
@@ -38,9 +39,11 @@ import java.util.Set;
 public class EnrollmentService implements ManageEnrollmentsUseCase {
 
     private static final long MAX_ENROLLMENT_DOCUMENT_SIZE_BYTES = 20L * 1024L * 1024L;
+    private static final long MAX_STUDENT_PHOTO_SIZE_BYTES = 5L * 1024L * 1024L;
     private static final Set<String> ALLOWED_ENROLLMENT_DOCUMENT_EXTENSIONS = Set.of(
             "pdf", "png", "jpg", "jpeg", "webp", "doc", "docx"
     );
+    private static final Set<String> ALLOWED_STUDENT_PHOTO_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
     private static final Map<String, String> ENROLLMENT_DOCUMENT_KEY_ALIASES = Map.of(
             "image-permission", "image-consent",
             "junaeb-sep", "other",
@@ -308,6 +311,51 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
 
     @Override
     @Transactional
+    public EnrollmentDetail uploadStudentPhoto(
+            Long enrollmentId,
+            String originalName,
+            String mimeType,
+            byte[] content
+    ) {
+        EnrollmentDetail current = findById(enrollmentId);
+        validateStudentPhotoUpload(originalName, content);
+
+        if (current.studentPhotoPath() != null && !current.studentPhotoPath().isBlank()) {
+            fileStoragePort.delete(current.studentPhotoPath());
+        }
+
+        StoredFileReference storedFile = fileStoragePort.storeStudentProfilePhoto(
+                buildCourseFolder(current),
+                buildStudentFolder(current),
+                originalName,
+                mimeType,
+                content
+        );
+        String normalizedMimeType = storedFile.mimeType() == null || storedFile.mimeType().isBlank()
+                ? "application/octet-stream"
+                : storedFile.mimeType();
+
+        manageEnrollmentsPort.updateStudentPhoto(current.studentId(), storedFile.filePath(), normalizedMimeType);
+        return findById(enrollmentId);
+    }
+
+    @Override
+    public StudentPhotoDownload downloadStudentPhoto(Long enrollmentId) {
+        EnrollmentDetail current = findById(enrollmentId);
+        if (current.studentPhotoPath() == null || current.studentPhotoPath().isBlank()) {
+            throw new ResourceNotFoundException("El alumno no tiene foto de perfil");
+        }
+
+        String extension = mimeTypeToExtension(current.studentPhotoMimeType());
+        return new StudentPhotoDownload(
+                "foto-alumno-" + current.studentId() + "." + extension,
+                current.studentPhotoMimeType(),
+                fileStoragePort.read(current.studentPhotoPath())
+        );
+    }
+
+    @Override
+    @Transactional
     public void delete(Long enrollmentId) {
         findById(enrollmentId);
         if (manageEnrollmentsPort.isEnrollmentInactive(enrollmentId)) {
@@ -516,6 +564,23 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
         }
     }
 
+    private void validateStudentPhotoUpload(String originalName, byte[] content) {
+        if (originalName == null || originalName.isBlank()) {
+            throw new IllegalArgumentException("La foto no tiene nombre valido");
+        }
+        if (content == null || content.length == 0) {
+            throw new IllegalArgumentException("La foto adjunta esta vacia");
+        }
+        if (content.length > MAX_STUDENT_PHOTO_SIZE_BYTES) {
+            throw new IllegalArgumentException("La foto supera el limite de 5 MB");
+        }
+
+        String extension = extractExtension(originalName);
+        if (!ALLOWED_STUDENT_PHOTO_EXTENSIONS.contains(extension)) {
+            throw new IllegalArgumentException("Solo se permiten fotos JPG, JPEG, PNG o WEBP");
+        }
+    }
+
     private String normalizeDocumentKey(String documentKey) {
         String normalizedKey = documentKey == null ? "" : documentKey.trim();
         return ENROLLMENT_DOCUMENT_KEY_ALIASES.getOrDefault(normalizedKey, normalizedKey);
@@ -527,6 +592,15 @@ public class EnrollmentService implements ManageEnrollmentsUseCase {
             return "";
         }
         return originalName.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private String mimeTypeToExtension(String mimeType) {
+        String normalizedMimeType = mimeType == null ? "" : mimeType.trim().toLowerCase(Locale.ROOT);
+        return switch (normalizedMimeType) {
+            case "image/png" -> "png";
+            case "image/webp" -> "webp";
+            default -> "jpg";
+        };
     }
 
     private String buildStorageKey(EnrollmentDetail enrollment, String documentKey, String storedName) {

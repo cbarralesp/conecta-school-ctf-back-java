@@ -75,6 +75,8 @@ public interface ManageEnrollmentsPort {
             String specialNeeds
     );
 
+    void updateStudentPhoto(Long studentId, String photoPath, String photoMimeType);
+
     boolean existsActiveCourse(Long courseId);
 
     Long findOrCreateCourse(

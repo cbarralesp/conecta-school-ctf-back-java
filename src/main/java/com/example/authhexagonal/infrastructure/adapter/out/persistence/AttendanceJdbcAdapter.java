@@ -101,7 +101,16 @@ public class AttendanceJdbcAdapter implements ManageAttendancePort {
     @Override
     public List<AttendanceRecordEntry> findAttendanceEntriesByCourseAndPeriod(Long courseId, LocalDate startDate, LocalDate endDate) {
         return jdbcTemplate.query("""
-                SELECT ad."ALUMNO_ID", ar."FECHA", ad."ESTADO", ad."HORA_LLEGADA", COALESCE(ad."OBSERVACION", '') AS "OBSERVACION"
+                SELECT
+                    ad."ALUMNO_ID",
+                    ar."FECHA",
+                    ad."ESTADO",
+                    ad."HORA_LLEGADA",
+                    COALESCE(ad."OBSERVACION", '') AS "OBSERVACION",
+                    ad."HORA_SALIDA",
+                    COALESCE(ad."MOTIVO_SALIDA", '') AS "MOTIVO_SALIDA",
+                    ad."SALIDA_JUSTIFICADA",
+                    COALESCE(ad."OBSERVACION_SALIDA", '') AS "OBSERVACION_SALIDA"
                 FROM "ASISTENCIA_REGISTROS" ar
                 JOIN "ASISTENCIA_DETALLES" ad ON ad."REGISTRO_ID" = ar."ID"
                 WHERE ar."CURSO_ID" = ?
@@ -264,6 +273,9 @@ public class AttendanceJdbcAdapter implements ManageAttendancePort {
             LocalTime arrivalTime = command.arrivalTime() == null || command.arrivalTime().isBlank()
                     ? null
                     : LocalTime.parse(command.arrivalTime(), TIME_FORMATTER);
+            LocalTime departureTime = command.departureTime() == null || command.departureTime().isBlank()
+                    ? null
+                    : LocalTime.parse(command.departureTime(), TIME_FORMATTER);
 
             if (count != null && count > 0) {
                 jdbcTemplate.update("""
@@ -271,11 +283,24 @@ public class AttendanceJdbcAdapter implements ManageAttendancePort {
                         SET "ESTADO" = ?,
                             "HORA_LLEGADA" = ?,
                             "OBSERVACION" = ?,
+                            "HORA_SALIDA" = ?,
+                            "MOTIVO_SALIDA" = ?,
+                            "SALIDA_JUSTIFICADA" = ?,
+                            "OBSERVACION_SALIDA" = ?,
                             "ACTIVO" = TRUE,
                             "ACTUALIZADO_EN" = CURRENT_TIMESTAMP
                         WHERE "REGISTRO_ID" = ?
                           AND "ALUMNO_ID" = ?
-                        """, command.status(), arrivalTime, command.note(), registerId, command.studentId());
+                        """,
+                        command.status(),
+                        arrivalTime,
+                        command.note(),
+                        departureTime,
+                        command.departureReason(),
+                        command.departureJustified(),
+                        command.departureNote(),
+                        registerId,
+                        command.studentId());
             } else {
                 jdbcTemplate.update("""
                         INSERT INTO "ASISTENCIA_DETALLES" (
@@ -284,23 +309,41 @@ public class AttendanceJdbcAdapter implements ManageAttendancePort {
                             "ESTADO",
                             "HORA_LLEGADA",
                             "OBSERVACION",
+                            "HORA_SALIDA",
+                            "MOTIVO_SALIDA",
+                            "SALIDA_JUSTIFICADA",
+                            "OBSERVACION_SALIDA",
                             "ACTIVO",
                             "CREADO_EN",
                             "ACTUALIZADO_EN"
-                        ) VALUES (?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                        """, registerId, command.studentId(), command.status(), arrivalTime, command.note());
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """,
+                        registerId,
+                        command.studentId(),
+                        command.status(),
+                        arrivalTime,
+                        command.note(),
+                        departureTime,
+                        command.departureReason(),
+                        command.departureJustified(),
+                        command.departureNote());
             }
         }
     }
 
     private AttendanceRecordEntry mapAttendanceEntry(ResultSet rs) throws SQLException {
         LocalTime arrivalTime = rs.getTime("HORA_LLEGADA") == null ? null : rs.getTime("HORA_LLEGADA").toLocalTime();
+        LocalTime departureTime = rs.getTime("HORA_SALIDA") == null ? null : rs.getTime("HORA_SALIDA").toLocalTime();
         return new AttendanceRecordEntry(
                 rs.getLong("ALUMNO_ID"),
                 rs.getDate("FECHA").toLocalDate(),
                 rs.getString("ESTADO"),
                 arrivalTime == null ? null : arrivalTime.format(TIME_FORMATTER),
-                rs.getString("OBSERVACION")
+                rs.getString("OBSERVACION"),
+                departureTime == null ? null : departureTime.format(TIME_FORMATTER),
+                rs.getString("MOTIVO_SALIDA"),
+                rs.getObject("SALIDA_JUSTIFICADA") == null ? null : rs.getBoolean("SALIDA_JUSTIFICADA"),
+                rs.getString("OBSERVACION_SALIDA")
         );
     }
 }

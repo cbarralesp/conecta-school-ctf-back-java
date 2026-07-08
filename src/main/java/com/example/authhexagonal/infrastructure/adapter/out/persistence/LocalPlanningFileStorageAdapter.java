@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Component
 public class LocalPlanningFileStorageAdapter implements FileStoragePort {
@@ -27,8 +28,28 @@ public class LocalPlanningFileStorageAdapter implements FileStoragePort {
     }
 
     @Override
-    public StoredFileReference storePlanningClassDocument(String originalName, String mimeType, byte[] content) {
-        return storeDocument(uploadsRoot.resolve("planning-classes"), originalName, mimeType, content);
+    public StoredFileReference storePlanningClassDocument(
+            String rootFolder,
+            String schoolYearFolder,
+            String semesterFolder,
+            String courseFolder,
+            String subjectFolder,
+            String unitFolder,
+            String classFolder,
+            String originalName,
+            String mimeType,
+            byte[] content
+    ) {
+        Path planningDirectory = uploadsRoot
+                .resolve(slugify(rootFolder == null ? "" : rootFolder))
+                .resolve(slugify(schoolYearFolder == null ? "" : schoolYearFolder))
+                .resolve(slugify(semesterFolder == null ? "" : semesterFolder))
+                .resolve(slugify(courseFolder == null ? "" : courseFolder))
+                .resolve(slugify(subjectFolder == null ? "" : subjectFolder))
+                .resolve(slugify(unitFolder == null ? "" : unitFolder))
+                .resolve(slugify(classFolder == null ? "" : classFolder))
+                .resolve("documentos");
+        return storeDocument(planningDirectory, originalName, mimeType, content);
     }
 
     @Override
@@ -45,7 +66,27 @@ public class LocalPlanningFileStorageAdapter implements FileStoragePort {
                 .resolve(slugify(courseFolder == null ? "" : courseFolder))
                 .resolve(slugify(studentFolder == null ? "" : studentFolder))
                 .resolve(slugify(documentKey == null ? "" : documentKey));
-        return storeDocument(enrollmentDirectory, originalName, mimeType, content);
+        StoredFileReference storedFile = storeDocument(enrollmentDirectory, originalName, mimeType, content);
+        deleteSiblingFiles(enrollmentDirectory, storedFile.storedName());
+        return storedFile;
+    }
+
+    @Override
+    public StoredFileReference storeStudentProfilePhoto(
+            String courseFolder,
+            String studentFolder,
+            String originalName,
+            String mimeType,
+            byte[] content
+    ) {
+        Path photoDirectory = uploadsRoot
+                .resolve("matriculas")
+                .resolve(slugify(courseFolder == null ? "" : courseFolder))
+                .resolve(slugify(studentFolder == null ? "" : studentFolder))
+                .resolve("foto-perfil");
+        StoredFileReference storedFile = storeDocument(photoDirectory, originalName, mimeType, content);
+        deleteSiblingFiles(photoDirectory, storedFile.storedName());
+        return storedFile;
     }
 
     private StoredFileReference storeDocument(Path baseDirectory, String originalName, String mimeType, byte[] content) {
@@ -92,13 +133,25 @@ public class LocalPlanningFileStorageAdapter implements FileStoragePort {
         }
 
         try {
-            Files.deleteIfExists(resolveReadablePath(filePath));
+            Path pathToDelete = resolveExistingPath(filePath);
+            if (pathToDelete != null) {
+                Files.deleteIfExists(pathToDelete);
+            }
         } catch (IOException exception) {
             throw new IllegalStateException("No fue posible eliminar el documento adjunto", exception);
         }
     }
 
     private Path resolveReadablePath(String filePath) throws IOException {
+        Path readablePath = resolveExistingPath(filePath);
+        if (readablePath != null) {
+            return readablePath;
+        }
+
+        throw new IOException("No existe el archivo: " + filePath);
+    }
+
+    private Path resolveExistingPath(String filePath) {
         Path directPath = Paths.get(filePath);
         if (Files.exists(directPath)) {
             return directPath;
@@ -119,7 +172,28 @@ public class LocalPlanningFileStorageAdapter implements FileStoragePort {
             }
         }
 
-        throw new IOException("No existe el archivo: " + filePath);
+        return null;
+    }
+
+    private void deleteSiblingFiles(Path directory, String keepFileName) {
+        if (directory == null || keepFileName == null || keepFileName.isBlank() || !Files.isDirectory(directory)) {
+            return;
+        }
+
+        try (Stream<Path> paths = Files.list(directory)) {
+            paths
+                    .filter(Files::isRegularFile)
+                    .filter(path -> !path.getFileName().toString().equals(keepFileName))
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException exception) {
+                            throw new IllegalStateException("No fue posible eliminar un documento anterior", exception);
+                        }
+                    });
+        } catch (IOException exception) {
+            throw new IllegalStateException("No fue posible limpiar documentos anteriores", exception);
+        }
     }
 
     private String removeExtension(String value) {

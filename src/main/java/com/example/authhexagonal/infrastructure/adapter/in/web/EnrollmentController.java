@@ -118,6 +118,38 @@ public class EnrollmentController {
                 .body(resource);
     }
 
+    @PostMapping(path = "/{enrollmentId}/foto", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public EnrollmentDetailResponse uploadStudentPhoto(
+            @PathVariable("enrollmentId") Long enrollmentId,
+            @RequestParam("file") MultipartFile file
+    ) throws java.io.IOException {
+        return EnrollmentDetailResponse.fromDomain(
+                manageEnrollmentsUseCase.uploadStudentPhoto(
+                        enrollmentId,
+                        file.getOriginalFilename(),
+                        file.getContentType(),
+                        file.getBytes()
+                )
+        );
+    }
+
+    @GetMapping("/{enrollmentId}/foto")
+    public ResponseEntity<ByteArrayResource> downloadStudentPhoto(
+            @PathVariable("enrollmentId") Long enrollmentId
+    ) {
+        var download = manageEnrollmentsUseCase.downloadStudentPhoto(enrollmentId);
+        ByteArrayResource resource = new ByteArrayResource(download.content());
+
+        return ResponseEntity.ok()
+                .contentType(resolveMediaType(download.mimeType()))
+                .contentLength(download.content().length)
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(download.fileName())
+                        .build()
+                        .toString())
+                .body(resource);
+    }
+
     @DeleteMapping("/{enrollmentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable("enrollmentId") Long enrollmentId) {

@@ -199,6 +199,10 @@ public class StudentAttendanceJdbcAdapter implements LoadStudentAttendancePort {
                     ar."FECHA" AS attendance_date,
                     ad."ESTADO" AS status,
                     ad."HORA_LLEGADA" AS arrival_time,
+                    ad."HORA_SALIDA" AS departure_time,
+                    COALESCE(ad."MOTIVO_SALIDA", '') AS departure_reason,
+                    ad."SALIDA_JUSTIFICADA" AS departure_justified,
+                    COALESCE(ad."OBSERVACION_SALIDA", '') AS departure_note,
                     COALESCE(ad."OBSERVACION", '') AS note
                 FROM "ASISTENCIA_REGISTROS" ar
                 JOIN "ASISTENCIA_DETALLES" ad ON ad."REGISTRO_ID" = ar."ID"
@@ -211,8 +215,12 @@ public class StudentAttendanceJdbcAdapter implements LoadStudentAttendancePort {
                 """, (rs, rowNum) -> new StudentAttendanceRecord(
                 DATE_FORMATTER.format(rs.getDate("attendance_date").toLocalDate()),
                 normalizeStatus(rs.getString("status")),
-                formatTime(rs.getTime("arrival_time")),
-                normalizeNote(rs.getString("note"))
+                buildTimeLabel(rs.getTime("arrival_time"), rs.getTime("departure_time")),
+                normalizeRecordNote(rs.getString("note"), rs.getString("departure_note")),
+                formatTime(rs.getTime("departure_time")),
+                normalizeDepartureReason(rs.getString("departure_reason")),
+                rs.getObject("departure_justified") == null ? null : rs.getBoolean("departure_justified"),
+                normalizeNote(rs.getString("departure_note"))
         ), courseId, studentId);
     }
 
@@ -286,6 +294,42 @@ public class StudentAttendanceJdbcAdapter implements LoadStudentAttendancePort {
             case "SUSPENDIDO", "SUSPENSION", "SUSPENSIÓN" -> "Suspension";
             default -> "Sin registro";
         };
+    }
+
+    private String buildTimeLabel(Time arrivalTime, Time departureTime) {
+        String arrivalLabel = formatTime(arrivalTime);
+        String departureLabel = formatTime(departureTime);
+
+        if (arrivalLabel != null && departureLabel != null) {
+            return "Entrada " + arrivalLabel + " · Salida " + departureLabel;
+        }
+        if (departureLabel != null) {
+            return "Salida " + departureLabel;
+        }
+        return arrivalLabel;
+    }
+
+    private String normalizeDepartureReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+
+        return switch (reason.trim().toUpperCase(CHILE)) {
+            case "MEDICO" -> "Control medico";
+            case "TRAMITE" -> "Tramite";
+            case "FAMILIAR" -> "Familiar";
+            default -> "Otro";
+        };
+    }
+
+    private String normalizeRecordNote(String note, String departureNote) {
+        String normalizedAttendanceNote = normalizeNote(note);
+        String normalizedDepartureNote = normalizeNote(departureNote);
+
+        if (normalizedAttendanceNote != null && normalizedDepartureNote != null) {
+            return normalizedAttendanceNote + " · " + normalizedDepartureNote;
+        }
+        return normalizedDepartureNote != null ? normalizedDepartureNote : normalizedAttendanceNote;
     }
 
     private String normalizeSpecialStatus(String activityCode) {

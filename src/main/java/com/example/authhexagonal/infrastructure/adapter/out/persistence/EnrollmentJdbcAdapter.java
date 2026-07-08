@@ -203,6 +203,8 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                     a."APELLIDOS",
                     a."FECHA_NACIMIENTO",
                     COALESCE(a."GENERO", '') AS genero,
+                    COALESCE(a."FOTO_PATH", '') AS foto_path,
+                    COALESCE(a."FOTO_MIME_TYPE", '') AS foto_mime_type,
                     c."ID" AS course_id,
                     TRIM(
                         COALESCE(NULLIF(BTRIM(c."NOMBRE"), ''), cg."NOMBRE")
@@ -251,6 +253,8 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                 rs.getString("APELLIDOS"),
                 rs.getObject("FECHA_NACIMIENTO", LocalDate.class).toString(),
                 rs.getString("genero"),
+                rs.getString("foto_path"),
+                rs.getString("foto_mime_type"),
                 rs.getLong("course_id"),
                 rs.getString("course_name"),
                 rs.getString("course_level"),
@@ -488,6 +492,16 @@ public class EnrollmentJdbcAdapter implements ManageEnrollmentsPort {
                     "ACTIVO" = TRUE
                 WHERE "ID" = ?
                 """, run, name, lastName, address, birthDate, gender, regionId, communeId, livesWith, allergies, specialistDiagnoses, emergencyContact, specialNeeds, studentId);
+    }
+
+    @Override
+    public void updateStudentPhoto(Long studentId, String photoPath, String photoMimeType) {
+        jdbcTemplate.update("""
+                UPDATE "ALUMNOS"
+                SET "FOTO_PATH" = ?,
+                    "FOTO_MIME_TYPE" = ?
+                WHERE "ID" = ?
+                """, photoPath, photoMimeType, studentId);
     }
 
     @Override
