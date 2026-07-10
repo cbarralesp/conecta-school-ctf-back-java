@@ -62,6 +62,11 @@ public class PlanningClassJdbcAdapter implements
                     a."NOMBRE" AS subject_name,
                     c."ID" AS course_id,
                     c."NOMBRE" AS course_name,
+                    cd."ANIO_ESCOLAR" AS school_year,
+                    CASE
+                        WHEN EXTRACT(MONTH FROM COALESCE(up."FECHA_INICIO", up."FECHA_TERMINO", CURRENT_DATE)) BETWEEN 1 AND 6 THEN 1
+                        ELSE 2
+                    END AS semester,
                     up."ESTADO"
                 FROM app_user cu
                 JOIN "UNIDADES_PLANIFICACION" up ON 1 = 1
@@ -377,6 +382,40 @@ public class PlanningClassJdbcAdapter implements
     }
 
     @Override
+    public int resolveVisibleUnitNumber(Long courseId, Long subjectId, LocalDate plannedDate, Long unitId) {
+        if (courseId == null || subjectId == null || plannedDate == null || unitId == null) {
+            return 0;
+        }
+
+        int startMonth = plannedDate.getMonthValue() <= 6 ? 1 : 7;
+        int endMonth = plannedDate.getMonthValue() <= 6 ? 6 : 12;
+        List<Long> unitIds = jdbcTemplate.query("""
+                SELECT up."ID"
+                FROM "UNIDADES_PLANIFICACION" up
+                JOIN "CARGAS_DOCENTES" cd ON cd."ID" = up."CARGA_DOCENTE_ID"
+                WHERE cd."CURSO_ID" = ?
+                  AND cd."ASIGNATURA_ID" = ?
+                  AND cd."ANIO_ESCOLAR" = ?
+                  AND EXTRACT(MONTH FROM COALESCE(up."FECHA_INICIO", ?)) BETWEEN ? AND ?
+                ORDER BY COALESCE(up."FECHA_INICIO", DATE '9999-12-31'), up."ID"
+                """, (rs, rowNum) -> rs.getLong("ID"),
+                courseId,
+                subjectId,
+                plannedDate.getYear(),
+                java.sql.Date.valueOf(plannedDate),
+                startMonth,
+                endMonth
+        );
+
+        for (int index = 0; index < unitIds.size(); index++) {
+            if (unitId.equals(unitIds.get(index))) {
+                return index + 1;
+            }
+        }
+        return 0;
+    }
+
+    @Override
     public Optional<PlanningClass> findAccessibleById(String username, Long classId) {
         return jdbcTemplate.query("""
                 WITH app_user AS (
@@ -430,6 +469,7 @@ public class PlanningClassJdbcAdapter implements
     @Override
     public List<PlanningClass> findClasses(
             String username,
+            Integer year,
             Long courseId,
             Long subjectId,
             Integer semester,
@@ -487,6 +527,11 @@ public class PlanningClassJdbcAdapter implements
 
         java.util.List<Object> args = new java.util.ArrayList<>();
         args.add(username);
+
+        if (year != null) {
+            sql.append(" AND cd.\"ANIO_ESCOLAR\" = ?");
+            args.add(year);
+        }
 
         if (courseId != null) {
             sql.append(" AND c.\"ID\" = ?");
@@ -741,6 +786,8 @@ public class PlanningClassJdbcAdapter implements
                 rs.getString("subject_name"),
                 rs.getLong("course_id"),
                 rs.getString("course_name"),
+                rs.getObject("school_year", Integer.class),
+                rs.getObject("semester", Integer.class),
                 rs.getString("ESTADO")
         );
     }

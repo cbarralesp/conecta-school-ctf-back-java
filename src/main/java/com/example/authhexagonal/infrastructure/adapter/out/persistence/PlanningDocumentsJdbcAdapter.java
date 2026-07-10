@@ -124,6 +124,55 @@ public class PlanningDocumentsJdbcAdapter implements PlanningDocumentRepositoryP
     }
 
     @Override
+    public PlanningDocument updateVisibility(Long documentId, boolean visibleToStudents) {
+        jdbcTemplate.update("""
+                UPDATE "CLASES_PLANIFICACION_DOCUMENTOS"
+                SET "VISIBLE_ALUMNOS" = ?
+                WHERE "ID" = ?
+                """, visibleToStudents, documentId);
+
+        return jdbcTemplate.query("""
+                SELECT
+                    pd."ID",
+                    pd."UNIDAD_ID",
+                    pd."CLASE_ID",
+                    pd."NOMBRE_ORIGINAL",
+                    pd."NOMBRE_ARCHIVO",
+                    pd."EXTENSION",
+                    pd."MIME_TYPE",
+                    pd."PESO_BYTES",
+                    pd."RUTA_ARCHIVO",
+                    COALESCE(pd."TIPO_ARCHIVO", CASE
+                      WHEN LOWER(pd."EXTENSION") IN ('doc', 'docx') THEN 'WORD'
+                      WHEN LOWER(pd."EXTENSION") = 'pdf' THEN 'PDF'
+                      WHEN LOWER(pd."EXTENSION") IN ('ppt', 'pptx') THEN 'PPT'
+                      ELSE 'OTRO'
+                    END) AS file_type,
+                    CASE WHEN pd."CLASE_ID" IS NOT NULL THEN 'CLASE' ELSE 'UNIDAD' END AS origin_type,
+                    COALESCE(pd."ESTADO", 'ACTIVO') AS status_code,
+                    pd."VISIBLE_ALUMNOS",
+                    pd."FECHA_CARGA",
+                    a."ID" AS subject_id,
+                    a."NOMBRE" AS subject_name,
+                    c."NOMBRE" AS course_name,
+                    up."NUMERO_UNIDAD",
+                    up."NOMBRE" AS unit_name,
+                    COALESCE(cp."TITULO", '') AS class_title,
+                    COALESCE(creator."USUARIO", '') AS created_by
+                FROM "CLASES_PLANIFICACION_DOCUMENTOS" pd
+                LEFT JOIN "CLASES_PLANIFICACION" cp ON cp."ID" = pd."CLASE_ID"
+                LEFT JOIN "UNIDADES_PLANIFICACION" up ON up."ID" = COALESCE(pd."UNIDAD_ID", cp."UNIDAD_ID")
+                LEFT JOIN "CARGAS_DOCENTES" cd ON cd."ID" = up."CARGA_DOCENTE_ID"
+                LEFT JOIN "ASIGNATURAS" a ON a."ID" = cd."ASIGNATURA_ID"
+                LEFT JOIN "CURSOS" c ON c."ID" = cd."CURSO_ID"
+                LEFT JOIN "USUARIOS" creator ON creator."ID" = pd."CREADO_POR_USUARIO_ID"
+                WHERE pd."ID" = ?
+                  AND COALESCE(pd."ELIMINADO", FALSE) = FALSE
+                  AND COALESCE(pd."ESTADO", 'ACTIVO') = 'ACTIVO'
+                """, (rs, rowNum) -> mapDocument(rs), documentId).stream().findFirst().orElseThrow();
+    }
+
+    @Override
     public void markDeleted(Long documentId) {
         jdbcTemplate.update("""
                 UPDATE "CLASES_PLANIFICACION_DOCUMENTOS"

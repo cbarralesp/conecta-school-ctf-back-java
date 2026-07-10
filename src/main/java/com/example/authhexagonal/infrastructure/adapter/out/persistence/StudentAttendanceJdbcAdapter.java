@@ -225,8 +225,9 @@ public class StudentAttendanceJdbcAdapter implements LoadStudentAttendancePort {
     }
 
     private List<StudentAttendanceHistoryDay> loadHistoryDays(Long studentId, Long courseId, int schoolYear) {
-        LocalDate start = LocalDate.of(schoolYear, 3, 1);
-        LocalDate end = LocalDate.of(schoolYear, 6, 30);
+        YearRange yearRange = schoolYearRange(schoolYear);
+        LocalDate start = yearRange.start();
+        LocalDate end = yearRange.end();
 
         Map<LocalDate, String> historyByDate = new HashMap<>();
         jdbcTemplate.query("""
@@ -281,6 +282,28 @@ public class StudentAttendanceJdbcAdapter implements LoadStudentAttendancePort {
             current = current.minusDays(1);
         }
         return current;
+    }
+
+    private YearRange schoolYearRange(int schoolYear) {
+        return new YearRange(
+                LocalDate.of(schoolYear, 1, 1),
+                LocalDate.of(schoolYear, 12, 31)
+        );
+    }
+
+    private SemesterRange currentSemesterRange(int schoolYear) {
+        int currentMonth = LocalDate.now().getMonthValue();
+        if (currentMonth >= 7) {
+            return new SemesterRange(
+                    LocalDate.of(schoolYear, 7, 1),
+                    LocalDate.of(schoolYear, 12, 31)
+            );
+        }
+
+        return new SemesterRange(
+                LocalDate.of(schoolYear, 1, 1),
+                LocalDate.of(schoolYear, 6, 30)
+        );
     }
 
     private String normalizeStatus(String status) {
@@ -358,6 +381,18 @@ public class StudentAttendanceJdbcAdapter implements LoadStudentAttendancePort {
             return "";
         }
         return value.substring(0, 1).toUpperCase(CHILE) + value.substring(1);
+    }
+
+    private record SemesterRange(
+            LocalDate start,
+            LocalDate end
+    ) {
+    }
+
+    private record YearRange(
+            LocalDate start,
+            LocalDate end
+    ) {
     }
 
     private record StudentContextRow(

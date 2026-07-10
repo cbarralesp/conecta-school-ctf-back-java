@@ -33,7 +33,7 @@ spring:
 
 app:
   uploads:
-    root: ${APP_UPLOADS_ROOT:uploads}
+    root: ${APP_UPLOADS_ROOT:${user.home}/Documents/sistema-escolar/uploads}
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:4200,http://127.0.0.1:4200,http://localhost,http://127.0.0.1}
   security:

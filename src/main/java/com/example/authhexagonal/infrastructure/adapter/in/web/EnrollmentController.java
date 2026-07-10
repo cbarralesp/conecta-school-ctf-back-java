@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
+
 @RestController
 @RequestMapping("/api/matriculas")
 public class EnrollmentController {
@@ -112,7 +114,7 @@ public class EnrollmentController {
                 .contentType(resolveMediaType(download.document().mimeType()))
                 .contentLength(download.content().length)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
-                        .filename(download.document().fileName())
+                        .filename(resolveDownloadFileName(download.document().fileName()), StandardCharsets.UTF_8)
                         .build()
                         .toString())
                 .body(resource);
@@ -144,7 +146,7 @@ public class EnrollmentController {
                 .contentType(resolveMediaType(download.mimeType()))
                 .contentLength(download.content().length)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
-                        .filename(download.fileName())
+                        .filename(resolveDownloadFileName(download.fileName()), StandardCharsets.UTF_8)
                         .build()
                         .toString())
                 .body(resource);
@@ -167,5 +169,9 @@ public class EnrollmentController {
         } catch (Exception exception) {
             return MediaType.APPLICATION_OCTET_STREAM;
         }
+    }
+
+    private String resolveDownloadFileName(String fileName) {
+        return fileName == null || fileName.isBlank() ? "documento" : fileName;
     }
 }

@@ -109,6 +109,7 @@ public class PlanningClassService implements
     @Override
     public List<PlanningClass> listClasses(
             String username,
+            Integer year,
             Long courseId,
             Long subjectId,
             Integer semester,
@@ -118,7 +119,7 @@ public class PlanningClassService implements
             String search
     ) {
         validateMonth(month);
-        return planningClassRepositoryPort.findClasses(username, courseId, subjectId, semester, month, status, documentType, search);
+        return planningClassRepositoryPort.findClasses(username, year, courseId, subjectId, semester, month, status, documentType, search);
     }
 
     @Override
@@ -155,7 +156,7 @@ public class PlanningClassService implements
                 planningClass.courseName(),
                 planningClass.subjectName(),
                 buildUnitFolder(planningClass),
-                buildClassFolder(planningClass),
+                buildClassFolder(username, planningClass),
                 command.originalName(),
                 command.mimeType(),
                 command.content()
@@ -643,16 +644,59 @@ public class PlanningClassService implements
     }
 
     private String buildUnitFolder(PlanningClass planningClass) {
-        String label = planningClass.unitNumberLabel() == null ? "" : planningClass.unitNumberLabel().trim();
-        String name = planningClass.unitName() == null ? "" : planningClass.unitName().trim();
-        String value = (label + " " + name).trim();
-        return value.isBlank() ? "unidad-" + planningClass.unitId() : value;
+        int visibleUnitNumber = planningClassRepositoryPort.resolveVisibleUnitNumber(
+                planningClass.courseId(),
+                planningClass.subjectId(),
+                planningClass.plannedDate(),
+                planningClass.unitId()
+        );
+        if (visibleUnitNumber > 0) {
+            return "unidad-" + visibleUnitNumber;
+        }
+
+        String unitNumber = extractFirstNumber(planningClass.unitNumberLabel());
+        return unitNumber.isBlank() ? "unidad" : "unidad-" + unitNumber;
     }
 
-    private String buildClassFolder(PlanningClass planningClass) {
-        String title = planningClass.title() == null ? "" : planningClass.title().trim();
-        String prefix = planningClass.id() == null ? "clase" : "clase-" + planningClass.id();
-        return title.isBlank() ? prefix : prefix + " " + title;
+    private String buildClassFolder(String username, PlanningClass planningClass) {
+        int classNumber = resolveVisibleClassNumber(username, planningClass);
+        return "clase-" + classNumber;
+    }
+
+    private int resolveVisibleClassNumber(String username, PlanningClass planningClass) {
+        if (planningClass.id() == null || planningClass.unitId() == null) {
+            return 1;
+        }
+
+        List<PlanningClass> unitClasses = planningClassRepositoryPort.findClasses(
+                        username,
+                        planningClass.plannedDate() == null ? null : planningClass.plannedDate().getYear(),
+                        planningClass.courseId(),
+                        planningClass.subjectId(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ).stream()
+                .filter(item -> planningClass.unitId().equals(item.unitId()))
+                .sorted(java.util.Comparator.comparing(PlanningClass::id))
+                .toList();
+
+        for (int index = 0; index < unitClasses.size(); index++) {
+            if (planningClass.id().equals(unitClasses.get(index).id())) {
+                return index + 1;
+            }
+        }
+        return 1;
+    }
+
+    private String extractFirstNumber(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\d+").matcher(value);
+        return matcher.find() ? matcher.group() : "";
     }
 
     private String extractExtension(String originalName) {

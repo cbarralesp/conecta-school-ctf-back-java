@@ -1,6 +1,5 @@
 package com.example.authhexagonal.infrastructure.adapter.in.web;
 
-import com.example.authhexagonal.application.support.AcademicSemesterResolver;
 import com.example.authhexagonal.domain.model.PlanningClassCommand;
 import com.example.authhexagonal.domain.model.PlanningClassObjectiveSelection;
 import com.example.authhexagonal.domain.model.PlanningClassDocumentUploadCommand;
@@ -101,6 +100,7 @@ public class PlanningClassController {
     @GetMapping
     public java.util.List<PlanningClassResponse> list(
             Authentication authentication,
+            @RequestParam(name = "year", required = false) Integer year,
             @RequestParam(name = "courseId", required = false) Long courseId,
             @RequestParam(name = "subjectId", required = false) Long subjectId,
             @RequestParam(name = "semester", required = false) Integer semester,
@@ -111,9 +111,10 @@ public class PlanningClassController {
     ) {
         return listPlanningClassesUseCase.listClasses(
                         authentication.getName(),
+                        year,
                         courseId,
                         subjectId,
-                        AcademicSemesterResolver.resolveProvidedOrCurrent(semester),
+                        semester,
                         month,
                         parseStatus(status),
                         parseDocumentType(documentType),
