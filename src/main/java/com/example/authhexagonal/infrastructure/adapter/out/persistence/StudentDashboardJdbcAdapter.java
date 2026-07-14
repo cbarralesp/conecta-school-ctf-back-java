@@ -38,7 +38,7 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
     }
 
     @Override
-    public Optional<StudentDashboard> findByUsername(String username) {
+    public Optional<StudentDashboard> findByUsername(String username, Integer schoolYear, Integer semester) {
         LocalDate today = LocalDate.now();
         int currentSchoolYear = today.getYear();
         int currentSemester = today.getMonthValue() >= 7 ? 2 : 1;
@@ -61,6 +61,15 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
 
         Map<String, Object> student = studentRows.getFirst();
         Long studentId = ((Number) student.get("student_id")).longValue();
+        Long currentCourseId = findCurrentCourseId(studentId);
+        AcademicPeriod gradePeriod = resolveRequestedOrCurrentGradePeriod(
+                studentId,
+                currentCourseId,
+                schoolYear,
+                semester,
+                currentSchoolYear,
+                currentSemester
+        );
 
         List<StudentEnrolledCourse> enrolledCourses = jdbcTemplate.query("""
                 SELECT
@@ -150,9 +159,9 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
                 rs.getDouble("score"),
                 rs.getString("period_name"),
                 formatTimestamp(rs.getTimestamp("recorded_at"))
-        ), studentId, currentSchoolYear, currentSemester);
+        ), studentId, gradePeriod.schoolYear(), gradePeriod.semester());
 
-        List<StudentSubjectGradeSummary> gradeSummary = buildGradeSummary(studentId, currentSchoolYear, currentSemester);
+        List<StudentSubjectGradeSummary> gradeSummary = buildGradeSummary(studentId, gradePeriod.schoolYear(), gradePeriod.semester());
 
         StudentAttendanceSummary attendanceSummary = jdbcTemplate.query("""
                 SELECT
@@ -297,6 +306,49 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
                 .toList();
     }
 
+    private AcademicPeriod resolveRequestedOrCurrentGradePeriod(
+            Long studentId,
+            Long currentCourseId,
+            Integer requestedSchoolYear,
+            Integer requestedSemester,
+            int fallbackSchoolYear,
+            int fallbackSemester
+    ) {
+        if (requestedSemester != null) {
+            return new AcademicPeriod(
+                    requestedSchoolYear != null ? requestedSchoolYear : fallbackSchoolYear,
+                    requestedSemester
+            );
+        }
+
+        if (currentCourseId == null) {
+            return new AcademicPeriod(fallbackSchoolYear, fallbackSemester);
+        }
+
+        List<AcademicPeriod> periods = jdbcTemplate.query("""
+                SELECT p."ANIO" AS school_year, p."SEMESTRE" AS semester
+                FROM "CALIFICACIONES" cal
+                JOIN "EVALUACIONES" e ON e."ID" = cal."EVALUACION_ID" AND e."ACTIVA" = TRUE
+                JOIN "PERIODOS_ACADEMICOS" p ON p."ID" = e."PERIODO_ID" AND p."ACTIVO" = TRUE
+                WHERE cal."ALUMNO_ID" = ?
+                  AND cal."ACTIVA" = TRUE
+                  AND cal."NOTA" IS NOT NULL
+                  AND e."CURSO_ID" = ?
+                GROUP BY p."ANIO", p."SEMESTRE"
+                ORDER BY p."ANIO" DESC, p."SEMESTRE" DESC
+                LIMIT 1
+                """, (rs, rowNum) -> new AcademicPeriod(
+                rs.getInt("school_year"),
+                rs.getInt("semester")
+        ), studentId, currentCourseId);
+
+        if (!periods.isEmpty()) {
+            return periods.getFirst();
+        }
+
+        return new AcademicPeriod(fallbackSchoolYear, fallbackSemester);
+    }
+
     private Long findCurrentCourseId(Long studentId) {
         return jdbcTemplate.query("""
                 SELECT c."ID"
@@ -419,6 +471,9 @@ public class StudentDashboardJdbcAdapter implements LoadStudentDashboardPort {
                 )
                 """, Boolean.class, tableName);
         return Boolean.TRUE.equals(exists);
+    }
+
+    private record AcademicPeriod(int schoolYear, int semester) {
     }
 
     private static final class SubjectGradeSummaryBuilder {

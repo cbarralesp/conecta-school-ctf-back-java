@@ -37,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/calificaciones")
+@RequestMapping({"/api/calificaciones", "/api/calificaciónes"})
 public class GradesController {
 
     private final ManageGradesUseCase manageGradesUseCase;
@@ -46,7 +46,7 @@ public class GradesController {
         this.manageGradesUseCase = manageGradesUseCase;
     }
 
-    @GetMapping("/catalogo")
+    @GetMapping({"/catalogo", "/catálogo"})
     public GradeCatalog catalog() {
         return manageGradesUseCase.getCatalog();
     }

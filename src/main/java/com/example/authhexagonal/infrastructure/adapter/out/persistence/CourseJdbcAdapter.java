@@ -1041,6 +1041,7 @@ public class CourseJdbcAdapter implements ManageCoursesPort, LoadCourseScheduleP
                       AND "CURSO_ID" = ?
                       AND "ASIGNATURA_ID" = ?
                       AND "ANIO_ESCOLAR" = ?
+                      AND "PERIODO_ID" IS NULL
                     ORDER BY "ACTIVA" DESC, "ID"
                     LIMIT 1
                     """, (rs, rowNum) -> rs.getLong("ID"), teacherId, courseId, subjectId, effectiveSchoolYear)
@@ -1064,6 +1065,7 @@ public class CourseJdbcAdapter implements ManageCoursesPort, LoadCourseScheduleP
                         WHERE "CURSO_ID" = ?
                           AND "ASIGNATURA_ID" = ?
                           AND "ANIO_ESCOLAR" = ?
+                          AND "PERIODO_ID" IS NULL
                           AND "ID" <> ?
                         """,
                         courseId,
@@ -1080,6 +1082,7 @@ public class CourseJdbcAdapter implements ManageCoursesPort, LoadCourseScheduleP
                     WHERE "CURSO_ID" = ?
                       AND "ASIGNATURA_ID" = ?
                       AND "ANIO_ESCOLAR" = ?
+                      AND "PERIODO_ID" IS NULL
                     ORDER BY "ACTIVA" DESC, "ID"
                     LIMIT 1
                     """, (rs, rowNum) -> rs.getLong("ID"), courseId, subjectId, effectiveSchoolYear)

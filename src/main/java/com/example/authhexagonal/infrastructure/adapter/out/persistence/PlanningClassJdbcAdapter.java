@@ -161,6 +161,8 @@ public class PlanningClassJdbcAdapter implements
             boolean publishedToStudents,
             Long createdByUserId
     ) {
+        syncSequence("CLASES_PLANIFICACION", "ID");
+
         Long classId = jdbcTemplate.queryForObject("""
                 INSERT INTO "CLASES_PLANIFICACION" (
                     "UNIDAD_ID",
@@ -607,6 +609,8 @@ public class PlanningClassJdbcAdapter implements
             String filePath,
             boolean visibleToStudents
     ) {
+        syncSequence("CLASES_PLANIFICACION_DOCUMENTOS", "ID");
+
         Long documentId = jdbcTemplate.queryForObject("""
                 INSERT INTO "CLASES_PLANIFICACION_DOCUMENTOS" (
                     "CLASE_ID",
@@ -774,6 +778,16 @@ public class PlanningClassJdbcAdapter implements
                 WHERE cp."ID" = ?
                 """.formatted(objectiveSelectionsSelectSql()), (rs, rowNum) -> mapPlanningClass(rs), classId).stream().findFirst()
                 .map(this::withDocuments);
+    }
+
+    private void syncSequence(String tableName, String columnName) {
+        jdbcTemplate.execute("""
+                SELECT setval(
+                    pg_get_serial_sequence('"%s"', '%s'),
+                    COALESCE((SELECT MAX("%s") FROM "%s"), 0) + 1,
+                    false
+                )
+                """.formatted(tableName, columnName, columnName, tableName));
     }
 
     private PlanningClassCatalogUnit mapCatalogUnit(ResultSet rs) throws SQLException {

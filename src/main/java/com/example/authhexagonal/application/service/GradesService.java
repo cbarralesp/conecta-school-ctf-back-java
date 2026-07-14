@@ -46,8 +46,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class GradesService implements ManageGradesUseCase {
@@ -676,20 +678,59 @@ public class GradesService implements ManageGradesUseCase {
 
     private PedagogicalReportArea mergeAreaWithBank(PedagogicalReportArea defaultArea, PedagogicalReportArea currentArea) {
         List<PedagogicalReportItem> currentItems = currentArea == null || currentArea.items() == null ? List.of() : currentArea.items();
-        List<PedagogicalReportItem> mergedItems = defaultArea.items().stream()
-                .map(defaultItem -> {
-                    PedagogicalReportItem matched = currentItems.stream()
-                            .filter(item -> item.questionId() != null && item.questionId().equals(defaultItem.questionId()))
-                            .findFirst()
-                            .orElseGet(() -> currentItems.stream()
-                                    .filter(item -> safeText(item.label()).equalsIgnoreCase(defaultItem.label()))
-                                    .findFirst()
-                                    .orElse(null));
-                    String answer = matched == null ? defaultItem.answer() : normalizePedagogicalAnswer(matched.answer(), matched.achieved());
-                    return new PedagogicalReportItem(defaultItem.questionId(), defaultItem.label(), answer, null);
-                })
-                .limit(4)
-                .toList();
+        List<PedagogicalReportItem> mergedItems;
+
+        if (!currentItems.isEmpty()) {
+            mergedItems = currentItems.stream()
+                    .limit(4)
+                    .map(currentItem -> {
+                        PedagogicalReportItem bankItem = defaultArea.items().stream()
+                                .filter(item -> currentItem.questionId() != null && currentItem.questionId().equals(item.questionId()))
+                                .findFirst()
+                                .orElseGet(() -> defaultArea.items().stream()
+                                        .filter(item -> safeText(item.label()).equalsIgnoreCase(currentItem.label()))
+                                        .findFirst()
+                                        .orElse(null));
+
+                        String answer = normalizePedagogicalAnswer(currentItem.answer(), currentItem.achieved());
+                        if (bankItem != null) {
+                            return new PedagogicalReportItem(bankItem.questionId(), bankItem.label(), answer, null);
+                        }
+                        return new PedagogicalReportItem(currentItem.questionId(), safeText(currentItem.label()), answer, null);
+                    })
+                    .toList();
+
+            if (mergedItems.size() < 4) {
+                List<Long> selectedIds = mergedItems.stream()
+                        .map(PedagogicalReportItem::questionId)
+                        .filter(Objects::nonNull)
+                        .toList();
+                List<String> selectedLabels = mergedItems.stream()
+                        .map(item -> safeText(item.label()).toLowerCase(Locale.ROOT))
+                        .toList();
+
+                List<PedagogicalReportItem> fillerItems = defaultArea.items().stream()
+                        .filter(item -> item.questionId() == null || !selectedIds.contains(item.questionId()))
+                        .filter(item -> !selectedLabels.contains(safeText(item.label()).toLowerCase(Locale.ROOT)))
+                        .limit(4L - mergedItems.size())
+                        .map(item -> new PedagogicalReportItem(item.questionId(), item.label(), item.answer(), null))
+                        .toList();
+
+                mergedItems = Stream.concat(mergedItems.stream(), fillerItems.stream())
+                        .limit(4)
+                        .toList();
+            }
+        } else {
+            mergedItems = defaultArea.items().stream()
+                    .limit(4)
+                    .map(defaultItem -> new PedagogicalReportItem(
+                            defaultItem.questionId(),
+                            defaultItem.label(),
+                            normalizePedagogicalAnswer(defaultItem.answer(), defaultItem.achieved()),
+                            null
+                    ))
+                    .toList();
+        }
 
         return new PedagogicalReportArea(
                 defaultArea.key(),

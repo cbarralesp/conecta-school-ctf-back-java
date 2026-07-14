@@ -226,6 +226,8 @@ public class AttendanceJdbcAdapter implements ManageAttendancePort {
 
     @Override
     public void saveDailyAttendance(Long courseId, LocalDate date, boolean classSuspended, String suspensionReason, List<DailyAttendanceCommand> commands) {
+        alignAttendanceSequences();
+
         Long registerId = jdbcTemplate.queryForObject("""
                 INSERT INTO "ASISTENCIA_REGISTROS" (
                     "CURSO_ID",
@@ -345,6 +347,23 @@ public class AttendanceJdbcAdapter implements ManageAttendancePort {
                 rs.getObject("SALIDA_JUSTIFICADA") == null ? null : rs.getBoolean("SALIDA_JUSTIFICADA"),
                 rs.getString("OBSERVACION_SALIDA")
         );
+    }
+
+    private void alignAttendanceSequences() {
+        jdbcTemplate.execute("""
+                SELECT setval(
+                    'public."ASISTENCIA_REGISTROS_ID_seq"',
+                    COALESCE((SELECT MAX("ID") FROM public."ASISTENCIA_REGISTROS"), 0),
+                    true
+                )
+                """);
+        jdbcTemplate.execute("""
+                SELECT setval(
+                    'public."ASISTENCIA_DETALLES_ID_seq"',
+                    COALESCE((SELECT MAX("ID") FROM public."ASISTENCIA_DETALLES"), 0),
+                    true
+                )
+                """);
     }
 }
 

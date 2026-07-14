@@ -30,7 +30,7 @@ public class AttendanceController {
         this.manageAttendanceUseCase = manageAttendanceUseCase;
     }
 
-    @GetMapping("/catalogo")
+    @GetMapping({"/catalogo", "/catálogo"})
     public AttendanceCatalog catalog() {
         return manageAttendanceUseCase.getCatalog();
     }

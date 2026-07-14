@@ -35,8 +35,15 @@ public class GradesJdbcAdapter implements ManageGradesPort {
                         WHEN RIGHT(BTRIM(c."NOMBRE"), LENGTH(BTRIM(c."LETRA"))) = BTRIM(c."LETRA") THEN c."NOMBRE"
                         ELSE c."NOMBRE" || ' ' || c."LETRA"
                     END AS "NOMBRE",
-                    c."ANIO_ESCOLAR"
+                    c."ANIO_ESCOLAR",
+                    TRIM(COALESCE(tp."NOMBRES", '') || ' ' || COALESCE(tp."APELLIDOS", '')) AS "TEACHER_NAME"
                 FROM "CURSOS" c
+                LEFT JOIN "CURSO_DOCENTES" cd
+                  ON cd."CURSO_ID" = c."ID"
+                LEFT JOIN "PROFESORES" pr
+                  ON pr."ID" = cd."PROFESOR_ID"
+                LEFT JOIN "PERSONAS" tp
+                  ON tp."ID" = pr."PERSONA_ID"
                 WHERE c."ACTIVO" = TRUE
                 ORDER BY
                     CASE
@@ -50,7 +57,8 @@ public class GradesJdbcAdapter implements ManageGradesPort {
                 """, (rs, rowNum) -> new GradeCourseOption(
                 rs.getLong("ID"),
                 rs.getString("NOMBRE"),
-                rs.getInt("ANIO_ESCOLAR")
+                rs.getInt("ANIO_ESCOLAR"),
+                rs.getString("TEACHER_NAME")
         ));
     }
 
@@ -58,20 +66,28 @@ public class GradesJdbcAdapter implements ManageGradesPort {
     public Optional<GradeCourseOption> findCourseById(Long courseId) {
         return jdbcTemplate.query("""
                 SELECT
-                    "ID",
+                    c."ID",
                     CASE
-                        WHEN COALESCE(BTRIM("LETRA"), '') = '' THEN "NOMBRE"
-                        WHEN RIGHT(BTRIM("NOMBRE"), LENGTH(BTRIM("LETRA"))) = BTRIM("LETRA") THEN "NOMBRE"
-                        ELSE "NOMBRE" || ' ' || "LETRA"
+                        WHEN COALESCE(BTRIM(c."LETRA"), '') = '' THEN c."NOMBRE"
+                        WHEN RIGHT(BTRIM(c."NOMBRE"), LENGTH(BTRIM(c."LETRA"))) = BTRIM(c."LETRA") THEN c."NOMBRE"
+                        ELSE c."NOMBRE" || ' ' || c."LETRA"
                     END AS "NOMBRE",
-                    "ANIO_ESCOLAR"
-                FROM "CURSOS"
-                WHERE "ID" = ?
-                  AND "ACTIVO" = TRUE
+                    c."ANIO_ESCOLAR",
+                    TRIM(COALESCE(tp."NOMBRES", '') || ' ' || COALESCE(tp."APELLIDOS", '')) AS "TEACHER_NAME"
+                FROM "CURSOS" c
+                LEFT JOIN "CURSO_DOCENTES" cd
+                  ON cd."CURSO_ID" = c."ID"
+                LEFT JOIN "PROFESORES" pr
+                  ON pr."ID" = cd."PROFESOR_ID"
+                LEFT JOIN "PERSONAS" tp
+                  ON tp."ID" = pr."PERSONA_ID"
+                WHERE c."ID" = ?
+                  AND c."ACTIVO" = TRUE
                 """, (rs, rowNum) -> new GradeCourseOption(
                 rs.getLong("ID"),
                 rs.getString("NOMBRE"),
-                rs.getInt("ANIO_ESCOLAR")
+                rs.getInt("ANIO_ESCOLAR"),
+                rs.getString("TEACHER_NAME")
         ), courseId).stream().findFirst();
     }
 
